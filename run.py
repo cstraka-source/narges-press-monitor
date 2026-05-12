@@ -215,7 +215,9 @@ def main() -> None:
     # Instagram
     print(f"\n  Fetching Instagram @{INSTAGRAM_USERNAME} (last {max(args.days, 14)} days)...")
     try:
-        ig_posts = fetch_instagram_posts(INSTAGRAM_USERNAME, days_back=max(args.days, 14))
+        ig_posts = fetch_instagram_posts(INSTAGRAM_USERNAME, days_back=max(args.days, 14),
+                                          login_user=os.getenv("INSTAGRAM_LOGIN_USER",""),
+                                          login_pass=os.getenv("INSTAGRAM_LOGIN_PASS",""))
         ig_new = sum(1 for p in ig_posts if upsert_ig_post(conn, p))
         print(f"  Instagram          {len(ig_posts):>3} posts, {ig_new} new")
         if use_notion and ig_new:

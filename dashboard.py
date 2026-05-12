@@ -956,48 +956,112 @@ with tab_topics:
 # ════════════════════════════════════════════════════════════════════════════════
 with tab_ig:
     st.markdown(f'<h2 style="font-size:20px;font-weight:700;color:{DARK};margin-bottom:6px">Instagram <span style="color:{SLATE};font-weight:400">@nargesrashidi</span></h2>', unsafe_allow_html=True)
+    st.markdown(f'<p style="color:{SLATE};font-size:14px;margin-bottom:20px">Her own posts · Posts that tag her · Hashtag mentions (#nargesrashidi, #prisoner951)</p>', unsafe_allow_html=True)
 
     if ig_all.empty:
         st.info("No Instagram data yet. Run `python3 run.py` to fetch.")
     else:
         ig_days = PERIOD_OPTS[st.selectbox("Period", list(PERIOD_OPTS.keys()), index=2, key="ig_period")]
         ig_cut  = pd.Timestamp.now() - pd.Timedelta(days=ig_days) if ig_days < 9999 else pd.Timestamp("2000-01-01")
-        ig_df   = ig_all[ig_all["date"] >= ig_cut] if ig_days < 9999 else ig_all
+        ig_df   = ig_all[ig_all["date"] >= ig_cut].copy() if ig_days < 9999 else ig_all.copy()
+
+        # Source type filter
+        src_types = ["All", "own_post", "tagged", "hashtag"]
+        src_labels = {"own_post": "Her posts", "tagged": "Tags her", "hashtag": "Hashtag"}
+        ig_src = st.selectbox("Source", src_types,
+            format_func=lambda x: "All sources" if x=="All" else src_labels.get(x,x), key="ig_src")
+        if ig_src != "All" and "source_type" in ig_df.columns:
+            ig_df = ig_df[ig_df["source_type"] == ig_src]
 
         if ig_df.empty:
             st.info("No posts in this period.")
         else:
-            im1, im2, im3, im4 = st.columns(4)
-            im1.metric("Posts",          len(ig_df))
-            im2.metric("Total likes",    f"{ig_df['likes'].sum():,}")
-            im3.metric("Total comments", f"{ig_df['comments'].sum():,}")
-            im4.metric("Avg likes/post", f"{int(ig_df['likes'].mean()):,}")
+            # KPI row
+            has_src = "source_type" in ig_df.columns
+            own_n    = int((ig_df["source_type"]=="own_post").sum()) if has_src else len(ig_df)
+            tagged_n = int((ig_df["source_type"]=="tagged").sum())   if has_src else 0
+            htag_n   = int((ig_df["source_type"]=="hashtag").sum())  if has_src else 0
+            st.markdown(f"""
+            <div class="kpi-grid" style="grid-template-columns:repeat(5,1fr)">
+              <div class="kpi-card">
+                <div class="kpi-icon">📸</div>
+                <div class="kpi-value">{len(ig_df):,}</div>
+                <div class="kpi-label">Total posts</div>
+              </div>
+              <div class="kpi-card green">
+                <div class="kpi-icon">❤️</div>
+                <div class="kpi-value" style="color:{GREEN}">{ig_df['likes'].sum():,}</div>
+                <div class="kpi-label">Total likes</div>
+              </div>
+              <div class="kpi-card">
+                <div class="kpi-icon">🏷️</div>
+                <div class="kpi-value">{tagged_n}</div>
+                <div class="kpi-label">Tags her</div>
+              </div>
+              <div class="kpi-card teal">
+                <div class="kpi-icon">#️⃣</div>
+                <div class="kpi-value" style="color:#0891b2">{htag_n}</div>
+                <div class="kpi-label">Hashtag posts</div>
+              </div>
+              <div class="kpi-card purple">
+                <div class="kpi-icon">👤</div>
+                <div class="kpi-value" style="color:#7c3aed">{own_n}</div>
+                <div class="kpi-label">Her own posts</div>
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
 
-            if ig_df["date"].notna().any():
-                st.markdown('<div class="chart-card" style="margin-top:20px">', unsafe_allow_html=True)
-                st.markdown('<p class="section-title">Engagement per post</p>', unsafe_allow_html=True)
-                fig_ig = go.Figure()
-                labels = ig_df["date"].dt.strftime("%d %b")
-                fig_ig.add_trace(go.Bar(x=labels, y=ig_df["likes"], name="Likes",
-                    marker_color="#ec4899"))
-                fig_ig.add_trace(go.Bar(x=labels, y=ig_df["comments"], name="Comments",
-                    marker_color="#f97316"))
-                fig_ig.update_layout(barmode="group")
-                st.plotly_chart(chart_theme(fig_ig, 240), use_container_width=True)
-                st.markdown('</div>', unsafe_allow_html=True)
+            ig_chart1, ig_chart2 = st.columns([3,2])
+            with ig_chart1:
+                if ig_df["date"].notna().any():
+                    st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+                    st.markdown('<p class="section-title">Likes over time</p>', unsafe_allow_html=True)
+                    ig_daily = ig_df.groupby(ig_df["date"].dt.date)["likes"].sum().reset_index()
+                    fig_ig = go.Figure(go.Bar(x=ig_daily["date"], y=ig_daily["likes"],
+                        marker_color="#ec4899", name="Likes"))
+                    fig_ig.update_yaxes(gridcolor="#f1f5f9")
+                    st.plotly_chart(chart_theme(fig_ig, 240), use_container_width=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
 
-            st.markdown("<br>", unsafe_allow_html=True)
+            with ig_chart2:
+                if has_src and ig_df["source_type"].notna().any():
+                    st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+                    st.markdown('<p class="section-title">Source breakdown</p>', unsafe_allow_html=True)
+                    src_counts = ig_df["source_type"].map(src_labels).value_counts().reset_index()
+                    src_counts.columns = ["type", "count"]
+                    fig_src = px.pie(src_counts, values="count", names="type", hole=0.5,
+                        color_discrete_sequence=["#ec4899","#4f46e5","#06b6d4"])
+                    fig_src.update_traces(textposition="inside", textinfo="percent+label",
+                        textfont=dict(size=12))
+                    fig_src.update_layout(height=240, showlegend=False,
+                        **{k:v for k,v in PLOTLY_LAYOUT.items() if k not in ("xaxis","yaxis","legend")})
+                    st.plotly_chart(fig_src, use_container_width=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
+
+            # Sort by likes desc — most impactful first
+            ig_sorted = ig_df.sort_values("likes", ascending=False)
+            st.markdown(f'<p class="section-title" style="margin-top:8px">All posts ({len(ig_sorted):,}) — sorted by likes</p>', unsafe_allow_html=True)
             cols = st.columns(3)
-            for i, (_, post) in enumerate(ig_df.iterrows()):
+            for i, (_, post) in enumerate(ig_sorted.head(30).iterrows()):
                 with cols[i % 3]:
-                    cap = (post.get("caption") or "")[:240]
+                    cap = (post.get("caption") or "")[:200]
+                    src_type = post.get("source_type","own_post")
+                    src_label = src_labels.get(src_type, src_type)
+                    src_color = {"own_post":"#ec4899","tagged":"#4f46e5","hashtag":"#06b6d4"}.get(src_type,"#94a3b8")
+                    username = post.get("username","")
+                    htag = post.get("hashtag","")
+                    src_display = f"#{htag}" if src_type=="hashtag" and htag else (f"@{username}" if username else "")
                     st.markdown(f"""
                     <div class="ig-card">
-                      <div class="ig-date">{post['date']} · {post.get('media_type','')}</div>
+                      <div class="ig-date">
+                        {post['date']} ·
+                        <span style="background:{src_color}20;color:{src_color};padding:1px 8px;border-radius:100px;font-size:11px;font-weight:600">{src_label}</span>
+                        {f'<span style="color:{SLATE};font-size:12px">&nbsp;{src_display}</span>' if src_display else ''}
+                      </div>
                       <p class="ig-caption">{cap}</p>
                       <div class="ig-stats">
-                        <span>❤️ {post.get('likes',0):,} likes</span>
-                        <span>💬 {post.get('comments',0):,} comments</span>
+                        <span>❤️ {post.get('likes',0):,}</span>
+                        <span>💬 {post.get('comments',0):,}</span>
                       </div>
                       <a href="{post.get('url','')}" target="_blank" class="ig-link">View on Instagram ↗</a>
                     </div>
