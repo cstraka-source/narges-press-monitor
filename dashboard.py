@@ -1,11 +1,12 @@
 """
-Interactive press monitoring dashboard — Brand24-style.
-Reads live from press_narges.db (SQLite).
+Narges Rashidi — Press Intelligence Dashboard
+If I Only Knew PR
 
-Run: streamlit run dashboard.py
+Run locally:  streamlit run dashboard.py
+Cloud:        https://narges-press-monitor-538spugleugn6wtdypc4n2.streamlit.app
 """
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -15,664 +16,995 @@ import streamlit as st
 
 DB_PATH = Path(__file__).parent / "press_narges.db"
 
+# ── Page config (must be first Streamlit call) ────────────────────────────────
 st.set_page_config(
-    page_title="Narges Rashidi · Press Monitor",
-    page_icon="📰",
+    page_title="Narges Rashidi · Press Intelligence",
+    page_icon="◆",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-st.markdown("""
+# ── Design system ─────────────────────────────────────────────────────────────
+ACCENT   = "#4f46e5"   # indigo-600
+ACCENT_L = "#e0e7ff"   # indigo-100
+GREEN    = "#059669"
+RED      = "#dc2626"
+SLATE    = "#64748b"
+DARK     = "#0f172a"
+BG       = "#f8fafc"
+CARD_BG  = "#ffffff"
+BORDER   = "#e2e8f0"
+
+CHART_COLORS = ["#4f46e5","#06b6d4","#10b981","#f59e0b","#ef4444","#8b5cf6","#ec4899","#14b8a6"]
+
+PLOTLY_LAYOUT = dict(
+    plot_bgcolor="white", paper_bgcolor="white",
+    font=dict(family="Inter, sans-serif", color=DARK, size=12),
+    margin=dict(l=0, r=0, t=16, b=0),
+    legend=dict(orientation="h", y=1.15, x=0, font=dict(size=11)),
+    xaxis=dict(showgrid=False, tickfont=dict(color=SLATE)),
+    yaxis=dict(gridcolor="#f1f5f9", tickfont=dict(color=SLATE), zeroline=False),
+    hoverlabel=dict(bgcolor="white", bordercolor=BORDER, font=dict(family="Inter, sans-serif")),
+)
+
+# ── Global CSS ────────────────────────────────────────────────────────────────
+st.markdown(f"""
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-    [data-testid="metric-container"] {
-        background:#f8f9fa;border-radius:12px;padding:16px;border:1px solid #e9ecef;
-    }
-    .mention-card {
-        background:white;border:1px solid #dee2e6;border-radius:10px;
-        padding:16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.06);
-    }
-    .badge {display:inline-block;padding:2px 8px;border-radius:20px;font-size:.75rem;font-weight:600;}
-    .badge-t1{background:#dbeafe;color:#1d4ed8;}
-    .badge-t2{background:#dcfce7;color:#166534;}
-    .badge-t3{background:#f3f4f6;color:#374151;}
-    .badge-pos{background:#d1fae5;color:#065f46;}
-    .badge-neg{background:#fee2e2;color:#991b1b;}
-    .badge-neu{background:#f3f4f6;color:#374151;}
-    .comp-row {padding:10px 0;border-bottom:1px solid #f0f0f0;}
-    .up   {color:#16a34a;font-weight:600;}
-    .down {color:#dc2626;font-weight:600;}
-    .flat {color:#6b7280;}
-    .topic-card {
-        background:white;border:1px solid #e5e7eb;border-radius:12px;
-        padding:20px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,.05);
-    }
+  /* ── Base ── */
+  html, body, [class*="css"] {{
+    font-family: 'Inter', sans-serif !important;
+    background: {BG};
+    color: {DARK};
+  }}
+
+  /* Hide Streamlit chrome */
+  #MainMenu, footer, header {{ visibility: hidden; }}
+  .stDeployButton {{ display: none; }}
+  [data-testid="stToolbar"] {{ display: none; }}
+  [data-testid="collapsedControl"] {{ color: {DARK}; }}
+
+  /* ── Sidebar ── */
+  [data-testid="stSidebar"] {{
+    background: {DARK} !important;
+    border-right: none;
+  }}
+  [data-testid="stSidebar"] * {{ color: #cbd5e1 !important; }}
+  [data-testid="stSidebar"] h1,
+  [data-testid="stSidebar"] h2,
+  [data-testid="stSidebar"] h3 {{
+    color: white !important;
+  }}
+  [data-testid="stSidebar"] .stSelectbox label,
+  [data-testid="stSidebar"] .stTextInput label {{
+    color: #94a3b8 !important;
+    font-size: 11px !important;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    font-weight: 600;
+  }}
+  [data-testid="stSidebar"] [data-testid="stSelectbox"] > div > div,
+  [data-testid="stSidebar"] [data-testid="stTextInput"] input {{
+    background: #1e293b !important;
+    border: 1px solid #334155 !important;
+    color: white !important;
+    border-radius: 8px;
+  }}
+  [data-testid="stSidebar"] hr {{ border-color: #1e293b !important; }}
+  [data-testid="stSidebar"] button {{
+    background: {ACCENT} !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+  }}
+
+  /* ── Main area ── */
+  .main .block-container {{
+    padding: 2rem 2.5rem 4rem;
+    max-width: 1600px;
+  }}
+
+  /* ── Tabs ── */
+  [data-testid="stTabs"] [data-baseweb="tab-list"] {{
+    background: transparent;
+    border-bottom: 2px solid {BORDER};
+    gap: 0;
+  }}
+  [data-testid="stTabs"] [data-baseweb="tab"] {{
+    background: transparent;
+    color: {SLATE};
+    font-weight: 500;
+    font-size: 14px;
+    padding: 12px 24px;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+  }}
+  [data-testid="stTabs"] [aria-selected="true"] {{
+    color: {ACCENT};
+    border-bottom: 2px solid {ACCENT};
+    font-weight: 600;
+  }}
+
+  /* ── Metric cards ── */
+  .kpi-grid {{ display: grid; grid-template-columns: repeat(6,1fr); gap: 16px; margin: 24px 0; }}
+  .kpi-card {{
+    background: {CARD_BG};
+    border: 1px solid {BORDER};
+    border-radius: 16px;
+    padding: 20px 20px 16px;
+    position: relative;
+    overflow: hidden;
+    transition: box-shadow .2s;
+    box-shadow: 0 1px 3px rgba(0,0,0,.05);
+  }}
+  .kpi-card:hover {{ box-shadow: 0 4px 16px rgba(0,0,0,.09); }}
+  .kpi-card::before {{
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: {ACCENT};
+  }}
+  .kpi-icon {{ font-size: 22px; margin-bottom: 8px; }}
+  .kpi-value {{
+    font-size: 2rem;
+    font-weight: 800;
+    color: {DARK};
+    line-height: 1;
+    letter-spacing: -.02em;
+  }}
+  .kpi-label {{
+    font-size: 12px;
+    font-weight: 500;
+    color: {SLATE};
+    margin-top: 6px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }}
+  .kpi-card.green::before {{ background: {GREEN}; }}
+  .kpi-card.red::before   {{ background: {RED}; }}
+  .kpi-card.teal::before  {{ background: #06b6d4; }}
+  .kpi-card.amber::before {{ background: #f59e0b; }}
+  .kpi-card.purple::before{{ background: #8b5cf6; }}
+
+  /* ── Section titles ── */
+  .section-title {{
+    font-size: 16px;
+    font-weight: 700;
+    color: {DARK};
+    margin: 0 0 16px;
+    letter-spacing: -.01em;
+  }}
+
+  /* ── Chart card ── */
+  .chart-card {{
+    background: {CARD_BG};
+    border: 1px solid {BORDER};
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.05);
+    margin-bottom: 20px;
+  }}
+
+  /* ── Mention card ── */
+  .mention-card {{
+    background: {CARD_BG};
+    border: 1px solid {BORDER};
+    border-radius: 12px;
+    padding: 18px 20px;
+    margin-bottom: 12px;
+    transition: all .2s;
+    box-shadow: 0 1px 3px rgba(0,0,0,.04);
+  }}
+  .mention-card:hover {{
+    border-color: {ACCENT};
+    box-shadow: 0 4px 20px rgba(79,70,229,.12);
+    transform: translateY(-1px);
+  }}
+  .mention-title {{
+    font-size: 14px;
+    font-weight: 600;
+    color: {DARK};
+    text-decoration: none;
+    line-height: 1.4;
+  }}
+  .mention-title:hover {{ color: {ACCENT}; }}
+  .mention-meta {{
+    font-size: 12px;
+    color: {SLATE};
+    margin: 6px 0 10px;
+  }}
+  .mention-snippet {{
+    font-size: 13px;
+    color: #475569;
+    line-height: 1.5;
+    margin: 0;
+  }}
+
+  /* ── Badges ── */
+  .badge {{
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 10px;
+    border-radius: 100px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-right: 4px;
+    letter-spacing: .02em;
+  }}
+  .badge-t1  {{ background: {ACCENT_L}; color: {ACCENT}; }}
+  .badge-t2  {{ background: #dcfce7;    color: #166534; }}
+  .badge-t3  {{ background: #f1f5f9;    color: {SLATE}; }}
+  .badge-pos {{ background: #d1fae5;    color: #065f46; }}
+  .badge-neg {{ background: #fee2e2;    color: #991b1b; }}
+  .badge-neu {{ background: #f1f5f9;    color: {SLATE}; }}
+  .badge-plat{{ background: #fef3c7;    color: #92400e; }}
+
+  /* ── Comparison table ── */
+  .comp-table {{ width: 100%; border-collapse: collapse; }}
+  .comp-table th {{
+    font-size: 12px;
+    font-weight: 600;
+    color: {SLATE};
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    padding: 12px 16px;
+    border-bottom: 2px solid {BORDER};
+    text-align: left;
+  }}
+  .comp-table td {{
+    padding: 14px 16px;
+    border-bottom: 1px solid {BORDER};
+    font-size: 14px;
+    font-weight: 500;
+  }}
+  .comp-table tr:hover td {{ background: {BG}; }}
+  .comp-table .metric-label {{ color: {DARK}; font-weight: 500; }}
+  .comp-val  {{ font-weight: 700; font-size: 16px; color: {DARK}; }}
+  .comp-prev {{ color: {SLATE}; font-size: 14px; }}
+  .delta-up  {{ color: {GREEN}; font-weight: 700; font-size: 13px; }}
+  .delta-dn  {{ color: {RED};   font-weight: 700; font-size: 13px; }}
+  .delta-flat{{ color: {SLATE}; font-weight: 600; font-size: 13px; }}
+
+  /* ── Topic row ── */
+  .topic-row {{
+    background: {CARD_BG};
+    border: 1px solid {BORDER};
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    transition: box-shadow .2s;
+  }}
+  .topic-row:hover {{ box-shadow: 0 4px 16px rgba(0,0,0,.08); }}
+  .topic-name {{ font-weight: 700; font-size: 15px; color: {DARK}; min-width: 220px; }}
+  .topic-stat {{ text-align: center; min-width: 80px; }}
+  .topic-stat-val {{ font-size: 18px; font-weight: 800; color: {DARK}; }}
+  .topic-stat-lbl {{ font-size: 11px; color: {SLATE}; font-weight: 500; text-transform: uppercase; letter-spacing:.04em; }}
+
+  /* ── SOV bar ── */
+  .sov-bar-wrap {{ flex: 1; }}
+  .sov-bar-bg {{
+    background: #f1f5f9; border-radius: 100px;
+    height: 8px; overflow: hidden; margin-bottom: 4px;
+  }}
+  .sov-bar-fill {{ height: 100%; border-radius: 100px; background: {ACCENT}; }}
+  .sov-pct {{ font-size: 13px; font-weight: 700; color: {ACCENT}; }}
+
+  /* ── Instagram card ── */
+  .ig-card {{
+    background: {CARD_BG};
+    border: 1px solid {BORDER};
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.05);
+    transition: box-shadow .2s;
+  }}
+  .ig-card:hover {{ box-shadow: 0 6px 20px rgba(0,0,0,.10); }}
+  .ig-date {{ font-size: 12px; color: {SLATE}; font-weight: 500; margin-bottom: 8px; }}
+  .ig-caption {{ font-size: 13px; color: #334155; line-height: 1.55; margin-bottom: 14px; }}
+  .ig-stats {{ display: flex; gap: 16px; font-size: 13px; font-weight: 600; color: {SLATE}; }}
+  .ig-link {{
+    display: inline-block; margin-top: 12px;
+    font-size: 12px; font-weight: 600; color: {ACCENT};
+    text-decoration: none;
+  }}
+  .ig-link:hover {{ text-decoration: underline; }}
+
+  /* ── Streamlit widget overrides ── */
+  [data-testid="stSelectbox"] > div > div,
+  [data-testid="stTextInput"] input {{
+    border-radius: 10px !important;
+    border-color: {BORDER} !important;
+    font-family: 'Inter', sans-serif !important;
+  }}
+  [data-testid="stDataFrame"] {{ border-radius: 12px; overflow: hidden; }}
+  .stButton > button {{
+    border-radius: 10px !important;
+    font-weight: 600 !important;
+    font-family: 'Inter', sans-serif !important;
+  }}
+  div[data-testid="stMetric"] {{ display: none; }}
 </style>
 """, unsafe_allow_html=True)
 
 
-# ── Data loading ──────────────────────────────────────────────────────────────
-@st.cache_data(ttl=300)
-def load_data():
-    data_dir = Path(__file__).parent / "data"
-    parquet_path = data_dir / "press.parquet"
-    ig_parquet = data_dir / "instagram.parquet"
-
-    # Prefer Parquet (cloud-friendly); fall back to live SQLite when running locally
-    if parquet_path.exists():
-        df = pd.read_parquet(parquet_path)
-        ig = pd.read_parquet(ig_parquet) if ig_parquet.exists() else pd.DataFrame()
-    else:
-        conn = sqlite3.connect(DB_PATH)
-        df = pd.read_sql_query("SELECT * FROM press ORDER BY date DESC, created_at DESC", conn)
-        try:
-            ig = pd.read_sql_query("SELECT * FROM instagram_posts ORDER BY date DESC", conn)
-        except Exception:
-            ig = pd.DataFrame()
-        conn.close()
-
-    df["date"] = pd.to_datetime(df["date"], errors="coerce")
-    if not ig.empty:
-        ig["date"] = pd.to_datetime(ig["date"], errors="coerce")
-    return df, ig
-
-
+# ── Helpers ───────────────────────────────────────────────────────────────────
 def _safe_int(v) -> int:
     try:
         return 0 if (v is None or (isinstance(v, float) and pd.isna(v))) else int(v)
     except Exception:
         return 0
 
-
 def reach_est(row) -> int:
-    tier, platform = str(row.get("tier") or "Tier 3"), str(row.get("platform") or "")
+    tier, plat = str(row.get("tier") or "Tier 3"), str(row.get("platform") or "")
     v = _safe_int(row.get("views"))
-    if platform == "YouTube":
-        return v
-    if platform in ("TikTok", "Facebook"):
-        return v * 3
-    if tier == "Tier 1":
-        return 850_000
-    if tier == "Tier 2":
-        return 120_000
+    if plat == "YouTube":       return v
+    if plat in ("TikTok","Facebook"): return v * 3
+    if tier == "Tier 1":        return 850_000
+    if tier == "Tier 2":        return 120_000
     return 15_000
 
-
 def ave_est(row) -> float:
-    tier, platform = str(row.get("tier") or "Tier 3"), str(row.get("platform") or "")
+    tier, plat = str(row.get("tier") or "Tier 3"), str(row.get("platform") or "")
     v = _safe_int(row.get("views"))
-    if platform == "YouTube":
-        return v * 0.003
-    if platform in ("TikTok", "Facebook"):
-        return v * 0.002
-    if tier == "Tier 1":
-        return 2500.0
-    if tier == "Tier 2":
-        return 350.0
+    if plat == "YouTube":       return v * 0.003
+    if plat in ("TikTok","Facebook"): return v * 0.002
+    if tier == "Tier 1":        return 2500.0
+    if tier == "Tier 2":        return 350.0
     return 75.0
 
-
-def _pct_change(new, old) -> str:
-    if old == 0:
-        return '<span class="up">▲ NEW</span>' if new > 0 else '<span class="flat">—</span>'
-    pct = (new - old) / old * 100
-    cls = "up" if pct >= 0 else "down"
-    arrow = "▲" if pct >= 0 else "▼"
-    return f'<span class="{cls}">{arrow} {abs(pct):.0f}%</span>'
-
-
-def _fmt_reach(r: int) -> str:
-    if r >= 1_000_000:
-        return f"{r/1_000_000:.1f}M"
-    if r >= 1_000:
-        return f"{r/1_000:.0f}K"
+def fmt_reach(r: int) -> str:
+    if r >= 1_000_000: return f"{r/1_000_000:.1f}M"
+    if r >= 1_000:     return f"{r/1_000:.0f}K"
     return str(r)
 
+def delta_html(cur, prev, invert=False) -> str:
+    if prev == 0:
+        return '<span class="delta-up">NEW</span>' if cur > 0 else '<span class="delta-flat">—</span>'
+    pct = (cur - prev) / prev * 100
+    up = pct >= 0
+    if invert: up = not up
+    cls   = "delta-up" if up else "delta-dn"
+    arrow = "↑" if up else "↓"
+    return f'<span class="{cls}">{arrow} {abs(pct):.0f}%</span>'
 
-# Topic clusters — keyword → topic name mapping
-_TOPIC_CLUSTERS = [
-    ("BAFTA Win",               ["bafta", "leading actress", "award", "winner", "wins"]),
-    ("Prisoner 951",            ["prisoner 951", "prisoner951"]),
-    ("Nazanin Zaghari-Ratcliffe",["nazanin", "zaghari", "ratcliffe"]),
-    ("Iranian Actress",         ["iranian actress", "iran", "persian"]),
-    ("Save the Children",       ["save the children", "savechildren", "charity"]),
-    ("BAFTA TV Awards 2026",    ["bafta tv", "bafta television", "bafta 2026"]),
-    ("Film & TV Reviews",       ["review", "drama", "series", "episode"]),
-    ("Interviews",              ["interview", "speaks", "talks to", "q&a", "in conversation"]),
-]
+def tier_badge(t) -> str:
+    n = str(t or "Tier 3")[-1]
+    return f'<span class="badge badge-t{n}">{t}</span>'
 
+def sent_badge(s) -> str:
+    s = (s or "neutral").lower()
+    return f'<span class="badge badge-{s[:3]}">{s.capitalize()}</span>'
 
-def classify_topics(df: pd.DataFrame) -> pd.DataFrame:
-    rows = []
-    text_col = (df["title"].fillna("") + " " + df["snippet"].fillna("")).str.lower()
-    for topic_name, keywords in _TOPIC_CLUSTERS:
-        mask = text_col.apply(lambda t: any(k in t for k in keywords))
-        sub = df[mask].copy()
-        if sub.empty:
-            continue
-        sub["reach"] = sub.apply(reach_est, axis=1)
-        sub["ave"]   = sub.apply(ave_est, axis=1)
-        pos = (sub["sentiment"] == "positive").sum()
-        neg = (sub["sentiment"] == "negative").sum()
-        rows.append({
-            "topic": topic_name,
-            "mentions": len(sub),
-            "reach": sub["reach"].sum(),
-            "ave": sub["ave"].sum(),
-            "positive": int(pos),
-            "negative": int(neg),
-            "sov": 0.0,
-        })
-    result = pd.DataFrame(rows)
-    if not result.empty:
-        total = result["mentions"].sum()
-        result["sov"] = (result["mentions"] / total * 100).round(2) if total else 0.0
-    return result
+def plat_badge(p) -> str:
+    return f'<span class="badge badge-plat">{p}</span>'
+
+def chart_theme(fig, height=280) -> go.Figure:
+    fig.update_layout(height=height, **PLOTLY_LAYOUT)
+    return fig
 
 
-# ── Sidebar ───────────────────────────────────────────────────────────────────
-st.sidebar.markdown("## 📰 Narges Rashidi")
-st.sidebar.markdown("*If I Only Knew PR*")
-st.sidebar.divider()
+# ── Data ─────────────────────────────────────────────────────────────────────
+@st.cache_data(ttl=300)
+def load_data():
+    data_dir    = Path(__file__).parent / "data"
+    parquet     = data_dir / "press.parquet"
+    ig_parquet  = data_dir / "instagram.parquet"
+    if parquet.exists():
+        df = pd.read_parquet(parquet)
+        ig = pd.read_parquet(ig_parquet) if ig_parquet.exists() else pd.DataFrame()
+    else:
+        conn = sqlite3.connect(DB_PATH)
+        df = pd.read_sql_query("SELECT * FROM press ORDER BY date DESC, created_at DESC", conn)
+        try:    ig = pd.read_sql_query("SELECT * FROM instagram_posts ORDER BY date DESC", conn)
+        except: ig = pd.DataFrame()
+        conn.close()
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    if not ig.empty:
+        ig["date"] = pd.to_datetime(ig["date"], errors="coerce")
+    return df, ig
 
 df_all, ig_all = load_data()
 
-if st.sidebar.button("🔄 Refresh data"):
-    st.cache_data.clear()
-    st.rerun()
 
-st.sidebar.divider()
-st.sidebar.caption(f"Database: {len(df_all):,} items total")
-st.sidebar.caption(f"Last entry: {df_all['created_at'].max() if not df_all.empty else '—'}")
+# ── Sidebar ───────────────────────────────────────────────────────────────────
+with st.sidebar:
+    st.markdown("""
+    <div style="padding:8px 0 20px">
+      <div style="font-size:11px;font-weight:700;color:#475569;letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px">If I Only Knew PR</div>
+      <div style="font-size:22px;font-weight:800;color:white;letter-spacing:-.02em">Narges Rashidi</div>
+      <div style="font-size:12px;color:#64748b;margin-top:2px">Press Intelligence</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.divider()
+
+    PERIOD_OPTS = {"Last 7 days":7,"Last 14 days":14,"Last 30 days":30,
+                   "Last 60 days":60,"Last 90 days":90,"All time":9999}
+    period_label = st.selectbox("Time period", list(PERIOD_OPTS.keys()))
+    DAYS = PERIOD_OPTS[period_label]
+
+    platforms = ["All"] + sorted(df_all["platform"].dropna().unique().tolist())
+    sel_plat = st.selectbox("Platform", platforms)
+
+    sel_tier = st.selectbox("Tier", ["All","Tier 1","Tier 2","Tier 3"])
+    sel_type = st.selectbox("Type", ["All"] + sorted(df_all["type"].dropna().unique().tolist()))
+    search   = st.text_input("Search", placeholder="keyword…")
+
+    st.divider()
+    if st.button("↺  Refresh data", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+
+    last_entry = df_all["created_at"].max() if not df_all.empty else "—"
+    st.markdown(f"""
+    <div style="margin-top:16px;font-size:11px;color:#475569;line-height:1.6">
+      <div>{len(df_all):,} total items</div>
+      <div>Last updated {str(last_entry)[:10]}</div>
+      <div style="margin-top:8px">Updates every Monday 8am</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# ── Apply filters ─────────────────────────────────────────────────────────────
+cutoff = pd.Timestamp.now() - pd.Timedelta(days=DAYS) if DAYS < 9999 else pd.Timestamp("2000-01-01")
+df = df_all[df_all["date"] >= cutoff].copy() if DAYS < 9999 else df_all.copy()
+if sel_plat != "All": df = df[df["platform"] == sel_plat]
+if sel_tier != "All": df = df[df["tier"] == sel_tier]
+if sel_type != "All": df = df[df["type"] == sel_type]
+if search:
+    m = (df["title"].str.contains(search,case=False,na=False) |
+         df["snippet"].str.contains(search,case=False,na=False) |
+         df["source"].str.contains(search,case=False,na=False))
+    df = df[m]
+
+df["reach"] = df.apply(reach_est, axis=1)
+df["ave"]   = df.apply(ave_est,   axis=1)
+
+
+# ── Header ────────────────────────────────────────────────────────────────────
+st.markdown(f"""
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+  <div>
+    <h1 style="font-size:28px;font-weight:800;color:{DARK};letter-spacing:-.03em;margin:0">
+      Press Intelligence
+    </h1>
+    <p style="color:{SLATE};font-size:14px;margin:4px 0 0">
+      Narges Rashidi &nbsp;·&nbsp; {period_label}
+      {"&nbsp;·&nbsp; " + sel_plat if sel_plat != "All" else ""}
+      {"&nbsp;·&nbsp; " + sel_tier if sel_tier != "All" else ""}
+      {"&nbsp;·&nbsp; &quot;" + search + "&quot;" if search else ""}
+    </p>
+  </div>
+  <div style="font-size:13px;color:{SLATE}">
+    <span style="background:{ACCENT_L};color:{ACCENT};padding:6px 14px;border-radius:100px;font-weight:600">
+      {len(df):,} mentions
+    </span>
+  </div>
+</div>
+""", unsafe_allow_html=True)
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
-tab_overview, tab_compare, tab_topics, tab_instagram = st.tabs([
-    "📊 Overview", "📈 Period Comparison", "🏷️ Topic Analysis", "📸 Instagram"
+tab_ov, tab_cmp, tab_topics, tab_ig = st.tabs([
+    "  Overview  ", "  Period Comparison  ", "  Topic Analysis  ", "  Instagram  "
 ])
 
 
 # ════════════════════════════════════════════════════════════════════════════════
-# TAB 1: OVERVIEW
+# OVERVIEW
 # ════════════════════════════════════════════════════════════════════════════════
-with tab_overview:
-    st.markdown("### Filters")
-    fc1, fc2, fc3, fc4, fc5 = st.columns(5)
-    period_opts = {"Last 7 days":7,"Last 14 days":14,"Last 30 days":30,"Last 60 days":60,"Last 90 days":90,"All time":9999}
-    days = period_opts[fc1.selectbox("Period", list(period_opts.keys()), key="ov_period")]
-    cutoff_naive = (pd.Timestamp.now() - pd.Timedelta(days=days)) if days < 9999 else pd.Timestamp("2000-01-01")
-    df = df_all[df_all["date"] >= cutoff_naive].copy() if days < 9999 else df_all.copy()
+with tab_ov:
 
-    platforms = ["All"] + sorted(df["platform"].dropna().unique().tolist())
-    sel_p = fc2.selectbox("Platform", platforms, key="ov_plat")
-    if sel_p != "All":
-        df = df[df["platform"] == sel_p]
+    # ── KPI cards ──
+    pos_n  = int((df["sentiment"]=="positive").sum())
+    neg_n  = int((df["sentiment"]=="negative").sum())
+    t1_n   = int((df["tier"]=="Tier 1").sum())
+    reach  = int(df["reach"].sum())
+    ave    = df["ave"].sum()
+    pos_pct= round(pos_n/max(len(df),1)*100)
 
-    sel_tier = fc3.selectbox("Tier", ["All","Tier 1","Tier 2","Tier 3"], key="ov_tier")
-    if sel_tier != "All":
-        df = df[df["tier"] == sel_tier]
+    st.markdown(f"""
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-icon">📰</div>
+        <div class="kpi-value">{len(df):,}</div>
+        <div class="kpi-label">Total mentions</div>
+      </div>
+      <div class="kpi-card green">
+        <div class="kpi-icon">✅</div>
+        <div class="kpi-value" style="color:{GREEN}">{pos_n}</div>
+        <div class="kpi-label">Positive &nbsp;<span style="color:#9ca3af;font-weight:400">{pos_pct}%</span></div>
+      </div>
+      <div class="kpi-card red">
+        <div class="kpi-icon">⚠️</div>
+        <div class="kpi-value" style="color:{RED}">{neg_n}</div>
+        <div class="kpi-label">Negative</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon">⭐</div>
+        <div class="kpi-value">{t1_n:,}</div>
+        <div class="kpi-label">Tier 1 hits</div>
+      </div>
+      <div class="kpi-card teal">
+        <div class="kpi-icon">👁</div>
+        <div class="kpi-value" style="color:#0891b2">{fmt_reach(reach)}</div>
+        <div class="kpi-label">Est. reach</div>
+      </div>
+      <div class="kpi-card purple">
+        <div class="kpi-icon">💷</div>
+        <div class="kpi-value" style="color:#7c3aed">£{ave/1000:.0f}K</div>
+        <div class="kpi-label">Est. AVE</div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    sel_type = fc4.selectbox("Type", ["All"] + sorted(df["type"].dropna().unique().tolist()), key="ov_type")
-    if sel_type != "All":
-        df = df[df["type"] == sel_type]
+    # ── Charts row 1 ──
+    c1, c2 = st.columns([3, 2])
 
-    search = fc5.text_input("Search", placeholder="keyword…", key="ov_search")
-    if search:
-        mask = (df["title"].str.contains(search, case=False, na=False) |
-                df["snippet"].str.contains(search, case=False, na=False) |
-                df["source"].str.contains(search, case=False, na=False))
-        df = df[mask]
-
-    df["reach"] = df.apply(reach_est, axis=1)
-    df["ave"]   = df.apply(ave_est, axis=1)
-    pos_n = int((df["sentiment"] == "positive").sum())
-    neg_n = int((df["sentiment"] == "negative").sum())
-    t1_n  = int((df["tier"] == "Tier 1").sum())
-
-    st.divider()
-    m1,m2,m3,m4,m5,m6 = st.columns(6)
-    m1.metric("Total mentions", f"{len(df):,}")
-    m2.metric("Positive ✅", f"{pos_n}")
-    m3.metric("Negative ❌", f"{neg_n}")
-    m4.metric("Tier 1 hits", f"{t1_n:,}")
-    m5.metric("Est. reach", _fmt_reach(int(df["reach"].sum())))
-    m6.metric("Est. AVE", f"£{df['ave'].sum():,.0f}")
-
-    st.divider()
-    cl, cm, cr = st.columns([3,2,2])
-
-    with cl:
-        st.subheader("Mentions over time")
+    with c1:
+        st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+        st.markdown('<p class="section-title">Mentions over time</p>', unsafe_allow_html=True)
         if df["date"].notna().any():
-            daily = df.groupby(df["date"].dt.date).size().reset_index(name="Mentions")
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=daily["date"], y=daily["Mentions"], name="Mentions",
-                line=dict(color="#2563eb",width=2.5), fill="tozeroy",
-                fillcolor="rgba(37,99,235,.08)"))
+            daily = df.groupby(df["date"].dt.date).size().reset_index(name="n")
             pos_d = df[df["sentiment"]=="positive"].groupby(df["date"].dt.date).size().reset_index(name="n")
             neg_d = df[df["sentiment"]=="negative"].groupby(df["date"].dt.date).size().reset_index(name="n")
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=daily["date"], y=daily["n"], name="All mentions",
+                line=dict(color=ACCENT, width=2.5), fill="tozeroy",
+                fillcolor="rgba(79,70,229,.07)"))
             if not pos_d.empty:
-                fig.add_trace(go.Scatter(x=pos_d["date"],y=pos_d["n"],name="Positive",
-                    line=dict(color="#16a34a",width=1.5,dash="dot")))
+                fig.add_trace(go.Scatter(x=pos_d["date"], y=pos_d["n"], name="Positive",
+                    line=dict(color=GREEN, width=1.5, dash="dot")))
             if not neg_d.empty:
-                fig.add_trace(go.Scatter(x=neg_d["date"],y=neg_d["n"],name="Negative",
-                    line=dict(color="#dc2626",width=1.5,dash="dot")))
-            fig.update_layout(height=260,margin=dict(l=0,r=0,t=10,b=0),
-                legend=dict(orientation="h",y=1.12),
-                plot_bgcolor="white",paper_bgcolor="white")
-            fig.update_xaxes(showgrid=False)
-            fig.update_yaxes(gridcolor="#f5f5f5")
-            st.plotly_chart(fig, use_container_width=True)
+                fig.add_trace(go.Scatter(x=neg_d["date"], y=neg_d["n"], name="Negative",
+                    line=dict(color=RED, width=1.5, dash="dot")))
+            st.plotly_chart(chart_theme(fig, 260), use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-        st.subheader("Reach over time")
+        st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+        st.markdown('<p class="section-title">Estimated reach over time</p>', unsafe_allow_html=True)
         if df["date"].notna().any():
             reach_d = df.groupby(df["date"].dt.date)["reach"].sum().reset_index()
-            fig_r = go.Figure(go.Scatter(x=reach_d["date"],y=reach_d["reach"],
-                fill="tozeroy", line=dict(color="#7c3aed",width=2.5),
-                fillcolor="rgba(124,58,237,.08)"))
-            fig_r.update_layout(height=220,margin=dict(l=0,r=0,t=10,b=0),
-                plot_bgcolor="white",paper_bgcolor="white")
-            fig_r.update_xaxes(showgrid=False)
-            fig_r.update_yaxes(gridcolor="#f5f5f5", tickformat=".2s")
-            st.plotly_chart(fig_r, use_container_width=True)
+            fig_r = go.Figure(go.Scatter(x=reach_d["date"], y=reach_d["reach"],
+                fill="tozeroy", line=dict(color="#06b6d4", width=2.5),
+                fillcolor="rgba(6,182,212,.07)", name="Reach"))
+            fig_r.update_yaxes(tickformat=".2s")
+            st.plotly_chart(chart_theme(fig_r, 220), use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    with cm:
-        st.subheader("Platform split")
+    with c2:
+        st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+        st.markdown('<p class="section-title">Platform split</p>', unsafe_allow_html=True)
         if not df.empty:
-            plat = df.groupby("platform").size().reset_index(name="count").sort_values("count",ascending=False)
-            fig2 = px.pie(plat,values="count",names="platform",hole=0.45,
-                color_discrete_sequence=px.colors.qualitative.Set2)
-            fig2.update_traces(textposition="inside",textinfo="percent+label")
-            fig2.update_layout(height=260,margin=dict(l=0,r=0,t=10,b=0),
-                showlegend=False,paper_bgcolor="white")
-            st.plotly_chart(fig2,use_container_width=True)
+            plat_d = df.groupby("platform").size().reset_index(name="n").sort_values("n", ascending=False)
+            fig2 = px.pie(plat_d, values="n", names="platform", hole=0.52,
+                color_discrete_sequence=CHART_COLORS)
+            fig2.update_traces(textposition="inside", textinfo="percent+label",
+                textfont=dict(size=12, family="Inter, sans-serif"))
+            fig2.update_layout(height=240, showlegend=False, **{k:v for k,v in PLOTLY_LAYOUT.items()
+                                                                  if k not in ("xaxis","yaxis")})
+            st.plotly_chart(fig2, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-        st.subheader("Sentiment")
+        st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+        st.markdown('<p class="section-title">Sentiment breakdown</p>', unsafe_allow_html=True)
         if df["sentiment"].notna().any():
             sd = df[df["sentiment"].notna()].groupby("sentiment").size().reset_index(name="n")
-            cmap = {"positive":"#16a34a","neutral":"#9ca3af","negative":"#dc2626"}
-            fig3 = px.pie(sd,values="n",names="sentiment",hole=0.45,
-                color="sentiment",color_discrete_map=cmap)
-            fig3.update_traces(textposition="inside",textinfo="percent+label")
-            fig3.update_layout(height=220,margin=dict(l=0,r=0,t=10,b=0),
-                showlegend=True,paper_bgcolor="white")
-            st.plotly_chart(fig3,use_container_width=True)
+            cmap = {"positive": GREEN, "neutral": "#94a3b8", "negative": RED}
+            fig3 = px.pie(sd, values="n", names="sentiment", hole=0.52,
+                color="sentiment", color_discrete_map=cmap)
+            fig3.update_traces(textposition="inside", textinfo="percent+label",
+                textfont=dict(size=12, family="Inter, sans-serif"))
+            fig3.update_layout(height=240, showlegend=True,
+                legend=dict(orientation="h", y=-0.1, x=0.5, xanchor="center"),
+                **{k:v for k,v in PLOTLY_LAYOUT.items() if k not in ("xaxis","yaxis","legend")})
+            st.plotly_chart(fig3, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    with cr:
-        st.subheader("Tier breakdown")
+    # ── Charts row 2 ──
+    d1, d2 = st.columns(2)
+    with d1:
+        st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+        st.markdown('<p class="section-title">Most active sources</p>', unsafe_allow_html=True)
         if not df.empty:
-            td = df.groupby("tier").size().reset_index(name="n")
-            tcolors = {"Tier 1":"#2563eb","Tier 2":"#16a34a","Tier 3":"#9ca3af"}
-            td["color"] = td["tier"].map(tcolors)
-            fig4 = go.Figure(go.Bar(x=td["tier"],y=td["n"],
-                marker_color=td["color"].tolist(),
-                text=td["n"],textposition="outside"))
-            fig4.update_layout(height=260,margin=dict(l=0,r=0,t=10,b=0),
-                plot_bgcolor="white",paper_bgcolor="white")
-            fig4.update_yaxes(gridcolor="#f5f5f5")
-            st.plotly_chart(fig4,use_container_width=True)
+            src = df.groupby("source").size().reset_index(name="n").sort_values("n").tail(12)
+            fig4 = go.Figure(go.Bar(y=src["source"], x=src["n"], orientation="h",
+                marker=dict(color=ACCENT, opacity=0.85),
+                text=src["n"], textposition="outside",
+                textfont=dict(size=11, color=SLATE)))
+            fig4.update_xaxes(gridcolor="#f1f5f9")
+            fig4.update_yaxes(showgrid=False, tickfont=dict(size=11))
+            st.plotly_chart(chart_theme(fig4, 360), use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-        st.subheader("Type breakdown")
-        if not df.empty:
-            typ = df.groupby("type").size().reset_index(name="n").sort_values("n",ascending=True)
-            fig5 = go.Figure(go.Bar(y=typ["type"],x=typ["n"],orientation="h",
-                marker_color="#2563eb",text=typ["n"],textposition="outside"))
-            fig5.update_layout(height=220,margin=dict(l=0,r=0,t=10,b=0),
-                plot_bgcolor="white",paper_bgcolor="white")
-            fig5.update_xaxes(gridcolor="#f5f5f5")
-            st.plotly_chart(fig5,use_container_width=True)
+    with d2:
+        st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+        st.markdown('<p class="section-title">Tier & type breakdown</p>', unsafe_allow_html=True)
+        e1, e2 = st.columns(2)
+        with e1:
+            if not df.empty:
+                td = df.groupby("tier").size().reset_index(name="n")
+                tcolors = {"Tier 1": ACCENT, "Tier 2": GREEN, "Tier 3": "#94a3b8"}
+                fig5 = go.Figure(go.Bar(x=td["tier"], y=td["n"],
+                    marker_color=[tcolors.get(t, SLATE) for t in td["tier"]],
+                    text=td["n"], textposition="outside"))
+                fig5.update_yaxes(gridcolor="#f1f5f9")
+                st.plotly_chart(chart_theme(fig5, 180), use_container_width=True)
+        with e2:
+            if not df.empty:
+                typ = df.groupby("type").size().reset_index(name="n").sort_values("n", ascending=True)
+                fig6 = go.Figure(go.Bar(y=typ["type"], x=typ["n"], orientation="h",
+                    marker=dict(color="#06b6d4", opacity=0.85),
+                    text=typ["n"], textposition="outside"))
+                fig6.update_xaxes(gridcolor="#f1f5f9")
+                st.plotly_chart(chart_theme(fig6, 180), use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    st.divider()
-    sa, sb = st.columns(2)
+    # ── Most impactful ──
+    st.markdown('<p class="section-title" style="margin-top:8px">Most impactful coverage</p>', unsafe_allow_html=True)
+    impact = df.sort_values("reach", ascending=False).head(10)
+    for _, row in impact.iterrows():
+        url   = row.get("url","") or ""
+        title = (row.get("title") or "Untitled")[:120]
+        src   = row.get("source","")
+        date_s = row["date"].strftime("%d %b %Y") if pd.notna(row.get("date")) else ""
+        plat   = row.get("platform","")
+        snip   = (row.get("snippet") or "")[:180]
+        link = f'<a href="{url}" target="_blank" class="mention-title">{title}</a>' if url else f'<span class="mention-title">{title}</span>'
+        st.markdown(f"""
+        <div class="mention-card">
+          {link}
+          <div class="mention-meta">
+            {src} &nbsp;·&nbsp; {date_s} &nbsp;·&nbsp;
+            {tier_badge(row.get("tier"))} {sent_badge(row.get("sentiment"))} {plat_badge(plat)}
+            &nbsp; <span style="color:{SLATE}">Reach ~{fmt_reach(int(row['reach']))}</span>
+          </div>
+          <p class="mention-snippet">{snip}</p>
+        </div>
+        """, unsafe_allow_html=True)
 
-    with sa:
-        st.subheader("Most active sources")
-        if not df.empty:
-            src = df.groupby("source").size().reset_index(name="n").sort_values("n",ascending=False).head(12)
-            fig6 = go.Figure(go.Bar(y=src["source"],x=src["n"],orientation="h",
-                marker_color="#2563eb",text=src["n"],textposition="outside"))
-            fig6.update_layout(height=380,margin=dict(l=0,r=0,t=10,b=0),
-                plot_bgcolor="white",paper_bgcolor="white")
-            fig6.update_xaxes(gridcolor="#f5f5f5")
-            st.plotly_chart(fig6,use_container_width=True)
-
-    with sb:
-        st.subheader("Most impactful coverage")
-        impact = df.sort_values("reach",ascending=False).head(8)
-        for _, row in impact.iterrows():
-            tb = f"<span class='badge badge-t{str(row.get('tier','Tier 3'))[-1]}'>{row.get('tier','')}</span>"
-            sent = row.get("sentiment") or "neutral"
-            sb2 = f"<span class='badge badge-{sent}'>{sent}</span>"
-            url = row.get("url","")
-            title = row.get("title","") or ""
-            source = row.get("source","")
-            date_s = row["date"].strftime("%d %b %Y") if pd.notna(row.get("date")) else ""
-            snip = (row.get("snippet") or "")[:150]
-            link = f'<a href="{url}" target="_blank" style="font-weight:600;color:#1d4ed8;text-decoration:none">{title[:90]}</a>' if url else f"<b>{title[:90]}</b>"
-            st.markdown(f"""<div class="mention-card">
-              {link}<br>
-              <small style="color:#6b7280">{source} · {date_s}</small> {tb} {sb2}<br>
-              <small>Reach ~{_fmt_reach(int(row['reach']))}</small>
-              <p style="margin:6px 0 0;font-size:.85rem;color:#4b5563">{snip}</p>
-            </div>""", unsafe_allow_html=True)
-
-    st.divider()
-    st.subheader(f"All mentions ({len(df):,})")
-    disp = df[["date","title","source","platform","tier","type","sentiment","views","likes","url"]].copy()
+    # ── Full table ──
+    st.markdown(f'<p class="section-title" style="margin-top:24px">All mentions ({len(df):,})</p>', unsafe_allow_html=True)
+    disp = df[["date","title","source","platform","tier","type","sentiment","views","url"]].copy()
     disp["date"] = disp["date"].dt.strftime("%Y-%m-%d")
     disp = disp.fillna("—")
-    st.dataframe(disp, use_container_width=True, height=500, hide_index=True,
+    st.dataframe(disp, use_container_width=True, height=480, hide_index=True,
         column_config={
-            "url": st.column_config.LinkColumn("Link", display_text="Open →"),
+            "url":   st.column_config.LinkColumn("Link", display_text="Open ↗"),
             "title": st.column_config.TextColumn("Title", width="large"),
-            "date": st.column_config.TextColumn("Date", width="small"),
-            "tier": st.column_config.TextColumn("Tier", width="small"),
+            "date":  st.column_config.TextColumn("Date", width="small"),
+            "tier":  st.column_config.TextColumn("Tier", width="small"),
+            "views": st.column_config.NumberColumn("Views"),
         })
 
 
 # ════════════════════════════════════════════════════════════════════════════════
-# TAB 2: PERIOD COMPARISON
+# PERIOD COMPARISON
 # ════════════════════════════════════════════════════════════════════════════════
-with tab_compare:
-    st.markdown("### Compare two time periods")
-    cc1, cc2, cc3 = st.columns([2,2,1])
-    with cc1:
-        st.markdown("**Current period**")
-        cur_days = st.selectbox("", ["Last 7 days","Last 14 days","Last 30 days","Last 60 days"],
-            key="cmp_cur", label_visibility="collapsed")
-    with cc2:
-        st.markdown("**vs.**")
-        prev_mode = st.selectbox("", ["Previous period","Previous 30 days","Previous 60 days","Previous 90 days"],
-            key="cmp_prev", label_visibility="collapsed")
+with tab_cmp:
+    st.markdown(f'<h2 style="font-size:20px;font-weight:700;color:{DARK};margin-bottom:20px">Compare periods</h2>', unsafe_allow_html=True)
+    pc1, pc2, _ = st.columns([2,2,3])
+    cur_days_label  = pc1.selectbox("Current period",  ["Last 7 days","Last 14 days","Last 30 days","Last 60 days"], key="cmp_cur")
+    prev_mode_label = pc2.selectbox("Compare against", ["Previous period","Same period last month"], key="cmp_prev")
 
-    cur_n = {"Last 7 days":7,"Last 14 days":14,"Last 30 days":30,"Last 60 days":60}[cur_days]
-    now = pd.Timestamp.now()
-    cur_start  = now - pd.Timedelta(days=cur_n)
-    prev_start = cur_start - pd.Timedelta(days=cur_n)
-    prev_end   = cur_start
+    cur_n    = {"Last 7 days":7,"Last 14 days":14,"Last 30 days":30,"Last 60 days":60}[cur_days_label]
+    now      = pd.Timestamp.now()
+    cur_start= now - pd.Timedelta(days=cur_n)
+    prev_start= cur_start - pd.Timedelta(days=cur_n)
+    prev_end = cur_start
 
-    df_cur  = df_all[(df_all["date"] >= cur_start)].copy()
-    df_prev = df_all[(df_all["date"] >= prev_start) & (df_all["date"] < prev_end)].copy()
+    df_c = df_all[df_all["date"] >= cur_start].copy()
+    df_p = df_all[(df_all["date"] >= prev_start) & (df_all["date"] < prev_end)].copy()
+    for d in (df_c, df_p):
+        d["reach"] = d.apply(reach_est, axis=1)
+        d["ave"]   = d.apply(ave_est,   axis=1)
 
-    df_cur["reach"]  = df_cur.apply(reach_est, axis=1)
-    df_cur["ave"]    = df_cur.apply(ave_est, axis=1)
-    df_prev["reach"] = df_prev.apply(reach_est, axis=1)
-    df_prev["ave"]   = df_prev.apply(ave_est, axis=1)
-
-    social_platforms = {"TikTok","Facebook","Bluesky","Instagram"}
-
-    def _metrics(d):
-        social_mask = d["platform"].isin(social_platforms)
-        return {
-            "total":       len(d),
-            "social":      int(social_mask.sum()),
-            "nonsocial":   int((~social_mask).sum()),
-            "pos_n":       int((d["sentiment"]=="positive").sum()),
-            "neg_n":       int((d["sentiment"]=="negative").sum()),
-            "pos_pct":     round((d["sentiment"]=="positive").mean()*100,1) if len(d) else 0,
-            "neg_pct":     round((d["sentiment"]=="negative").mean()*100,1) if len(d) else 0,
-            "social_reach":    int(d[social_mask]["reach"].sum()),
-            "nonsocial_reach": int(d[~social_mask]["reach"].sum()),
-            "reach":           int(d["reach"].sum()),
-            "ave":             d["ave"].sum(),
-            "t1":              int((d["tier"]=="Tier 1").sum()),
-        }
-
-    mc = _metrics(df_cur)
-    mp = _metrics(df_prev)
-
-    cur_label  = f"{cur_start.strftime('%d %b')} – {now.strftime('%d %b %Y')}"
-    prev_label = f"{prev_start.strftime('%d %b')} – {prev_end.strftime('%d %b %Y')}"
-
-    st.divider()
-    h1,h2,h3 = st.columns([3,2,2])
-    h1.markdown("**Metric**")
-    h2.markdown(f"**{cur_label}**")
-    h3.markdown(f"**{prev_label}**")
-    st.divider()
+    SOCIAL = {"TikTok","Facebook","Bluesky","Instagram"}
+    def _m(d):
+        sm = d["platform"].isin(SOCIAL)
+        return dict(
+            total=len(d), social=int(sm.sum()), nonsocial=int((~sm).sum()),
+            pos=int((d["sentiment"]=="positive").sum()),
+            neg=int((d["sentiment"]=="negative").sum()),
+            pos_pct=round((d["sentiment"]=="positive").mean()*100,1) if len(d) else 0,
+            neg_pct=round((d["sentiment"]=="negative").mean()*100,1) if len(d) else 0,
+            sreach=int(d[sm]["reach"].sum()), nreach=int(d[~sm]["reach"].sum()),
+            reach=int(d["reach"].sum()), ave=int(d["ave"].sum()),
+            t1=int((d["tier"]=="Tier 1").sum()),
+        )
+    mc, mp = _m(df_c), _m(df_p)
+    cur_lbl  = f"{cur_start.strftime('%d %b')} – {now.strftime('%d %b %Y')}"
+    prev_lbl = f"{prev_start.strftime('%d %b')} – {prev_end.strftime('%d %b %Y')}"
 
     rows = [
-        ("Total mentions",          mc["total"],         mp["total"],         False),
-        ("Social media mentions",   mc["social"],        mp["social"],        False),
-        ("Non-social media",        mc["nonsocial"],     mp["nonsocial"],     False),
-        ("Positive mentions",       mc["pos_n"],         mp["pos_n"],         False),
-        ("Negative mentions",       mc["neg_n"],         mp["neg_n"],         True),
-        ("Social media reach",      mc["social_reach"],  mp["social_reach"],  False),
-        ("Non-social reach",        mc["nonsocial_reach"],mp["nonsocial_reach"],False),
-        ("Est. AVE",                int(mc["ave"]),      int(mp["ave"]),      False),
-        ("Tier 1 hits",             mc["t1"],            mp["t1"],            False),
+        ("Total mentions",        mc["total"],   mp["total"],   False),
+        ("Social media mentions", mc["social"],  mp["social"],  False),
+        ("Non-social mentions",   mc["nonsocial"],mp["nonsocial"],False),
+        ("Positive mentions",     mc["pos"],     mp["pos"],     False),
+        ("Negative mentions",     mc["neg"],     mp["neg"],     True),
+        ("Social reach",          mc["sreach"],  mp["sreach"],  False),
+        ("Non-social reach",      mc["nreach"],  mp["nreach"],  False),
+        ("Est. AVE",              mc["ave"],     mp["ave"],     False),
+        ("Tier 1 hits",           mc["t1"],      mp["t1"],      False),
     ]
 
-    for label, cur_v, prev_v, invert in rows:
-        r1,r2,r3 = st.columns([3,2,2])
-        r1.markdown(f"**{label}**")
-        pct_html = _pct_change(cur_v, prev_v)
-        if invert and "up" in pct_html:
-            pct_html = pct_html.replace("up","down").replace("▲","▼")
-        elif invert and "down" in pct_html:
-            pct_html = pct_html.replace("down","up").replace("▼","▲")
-        display_v = _fmt_reach(cur_v) if "reach" in label.lower() else (f"£{cur_v:,}" if "AVE" in label else f"{cur_v:,}")
-        r2.markdown(f"{display_v} &nbsp; {pct_html}", unsafe_allow_html=True)
-        display_p = _fmt_reach(prev_v) if "reach" in label.lower() else (f"£{prev_v:,}" if "AVE" in label else f"{prev_v:,}")
-        r3.markdown(display_p)
+    reach_rows = {"Social reach", "Non-social reach"}
+    ave_rows   = {"Est. AVE"}
 
-    st.divider()
+    st.markdown(f"""
+    <table class="comp-table">
+      <thead>
+        <tr>
+          <th style="width:35%">Metric</th>
+          <th>{cur_lbl}</th>
+          <th>vs</th>
+          <th>{prev_lbl}</th>
+        </tr>
+      </thead>
+      <tbody>
+    """ + "".join(f"""
+        <tr>
+          <td class="metric-label">{lbl}</td>
+          <td><span class="comp-val">{("£"+fmt_reach(cv)) if lbl in ave_rows else (fmt_reach(cv) if lbl in reach_rows else f"{cv:,}")}</span>
+              &nbsp; {delta_html(cv, pv, inv)}</td>
+          <td></td>
+          <td class="comp-prev">{("£"+fmt_reach(pv)) if lbl in ave_rows else (fmt_reach(pv) if lbl in reach_rows else f"{pv:,}")}</td>
+        </tr>
+    """ for lbl,cv,pv,inv in rows) + """
+      </tbody>
+    </table>
+    """, unsafe_allow_html=True)
 
-    # Overlay charts
-    ch1, ch2 = st.columns(2)
-    with ch1:
-        st.subheader("Mentions")
-        fig_c1 = go.Figure()
-        if df_cur["date"].notna().any():
-            cd = df_cur.groupby(df_cur["date"].dt.date).size().reset_index(name="n")
-            fig_c1.add_trace(go.Scatter(x=cd["date"],y=cd["n"],name="Current period",
-                line=dict(color="#2563eb",width=2.5),fill="tozeroy",fillcolor="rgba(37,99,235,.08)"))
-        if df_prev["date"].notna().any():
-            pd_ = df_prev.groupby(df_prev["date"].dt.date).size().reset_index(name="n")
-            fig_c1.add_trace(go.Scatter(x=pd_["date"],y=pd_["n"],name="Previous period",
-                line=dict(color="#93c5fd",width=1.5,dash="dash")))
-        fig_c1.update_layout(height=280,margin=dict(l=0,r=0,t=10,b=0),
-            plot_bgcolor="white",paper_bgcolor="white",
-            legend=dict(orientation="h",y=1.12))
-        fig_c1.update_xaxes(showgrid=False)
-        fig_c1.update_yaxes(gridcolor="#f5f5f5")
-        st.plotly_chart(fig_c1,use_container_width=True)
+    st.markdown("<br>", unsafe_allow_html=True)
+    cc1, cc2 = st.columns(2)
+    with cc1:
+        st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+        st.markdown('<p class="section-title">Mentions — current vs previous</p>', unsafe_allow_html=True)
+        fig_cc = go.Figure()
+        if df_c["date"].notna().any():
+            cd = df_c.groupby(df_c["date"].dt.date).size().reset_index(name="n")
+            fig_cc.add_trace(go.Scatter(x=cd["date"],y=cd["n"],name="Current",
+                line=dict(color=ACCENT,width=2.5),fill="tozeroy",fillcolor="rgba(79,70,229,.07)"))
+        if df_p["date"].notna().any():
+            pd_ = df_p.groupby(df_p["date"].dt.date).size().reset_index(name="n")
+            fig_cc.add_trace(go.Scatter(x=pd_["date"],y=pd_["n"],name="Previous",
+                line=dict(color="#a5b4fc",width=1.5,dash="dash")))
+        st.plotly_chart(chart_theme(fig_cc,260), use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    with ch2:
-        st.subheader("Reach")
-        fig_c2 = go.Figure()
-        if df_cur["date"].notna().any():
-            cr_ = df_cur.groupby(df_cur["date"].dt.date)["reach"].sum().reset_index()
-            fig_c2.add_trace(go.Scatter(x=cr_["date"],y=cr_["reach"],name="Current period",
-                line=dict(color="#7c3aed",width=2.5),fill="tozeroy",fillcolor="rgba(124,58,237,.08)"))
-        if df_prev["date"].notna().any():
-            pr_ = df_prev.groupby(df_prev["date"].dt.date)["reach"].sum().reset_index()
-            fig_c2.add_trace(go.Scatter(x=pr_["date"],y=pr_["reach"],name="Previous period",
-                line=dict(color="#c4b5fd",width=1.5,dash="dash")))
-        fig_c2.update_layout(height=280,margin=dict(l=0,r=0,t=10,b=0),
-            plot_bgcolor="white",paper_bgcolor="white",
-            legend=dict(orientation="h",y=1.12))
-        fig_c2.update_xaxes(showgrid=False)
-        fig_c2.update_yaxes(gridcolor="#f5f5f5",tickformat=".2s")
-        st.plotly_chart(fig_c2,use_container_width=True)
+    with cc2:
+        st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+        st.markdown('<p class="section-title">Reach — current vs previous</p>', unsafe_allow_html=True)
+        fig_cr = go.Figure()
+        if df_c["date"].notna().any():
+            cr_ = df_c.groupby(df_c["date"].dt.date)["reach"].sum().reset_index()
+            fig_cr.add_trace(go.Scatter(x=cr_["date"],y=cr_["reach"],name="Current",
+                line=dict(color="#06b6d4",width=2.5),fill="tozeroy",fillcolor="rgba(6,182,212,.07)"))
+        if df_p["date"].notna().any():
+            pr_ = df_p.groupby(df_p["date"].dt.date)["reach"].sum().reset_index()
+            fig_cr.add_trace(go.Scatter(x=pr_["date"],y=pr_["reach"],name="Previous",
+                line=dict(color="#a5f3fc",width=1.5,dash="dash")))
+        fig_cr.update_yaxes(tickformat=".2s")
+        st.plotly_chart(chart_theme(fig_cr,260), use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    ch3, ch4 = st.columns(2)
-    with ch3:
-        st.subheader("Sentiment breakdown")
-        sent_data = []
-        for period_lbl, d in [(cur_label, df_cur), (prev_label, df_prev)]:
+    cc3, cc4 = st.columns(2)
+    with cc3:
+        st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+        st.markdown('<p class="section-title">Sentiment breakdown</p>', unsafe_allow_html=True)
+        sdf_rows = []
+        for lbl, d in [(cur_lbl,df_c),(prev_lbl,df_p)]:
             tot = max(len(d),1)
-            sent_data.append({"Period":period_lbl,"Positive":round((d["sentiment"]=="positive").sum()/tot*100,1),
-                "Neutral":round((d["sentiment"]=="neutral").sum()/tot*100,1),
+            sdf_rows.append({"Period":lbl,
+                "Positive":round((d["sentiment"]=="positive").sum()/tot*100,1),
+                "Neutral" :round((d["sentiment"]=="neutral").sum()/tot*100,1),
                 "Negative":round((d["sentiment"]=="negative").sum()/tot*100,1)})
-        sdf = pd.DataFrame(sent_data)
+        sdf = pd.DataFrame(sdf_rows)
         fig_s = go.Figure()
-        for col,color in [("Positive","#16a34a"),("Neutral","#9ca3af"),("Negative","#dc2626")]:
+        for col,color in [("Positive",GREEN),("Neutral","#94a3b8"),("Negative",RED)]:
             fig_s.add_trace(go.Bar(name=col,x=sdf["Period"],y=sdf[col],marker_color=color))
-        fig_s.update_layout(barmode="stack",height=280,margin=dict(l=0,r=0,t=10,b=0),
-            plot_bgcolor="white",paper_bgcolor="white",
-            yaxis_title="%",legend=dict(orientation="h",y=1.12))
-        fig_s.update_yaxes(gridcolor="#f5f5f5")
-        st.plotly_chart(fig_s,use_container_width=True)
+        fig_s.update_layout(barmode="stack")
+        fig_s.update_yaxes(ticksuffix="%")
+        st.plotly_chart(chart_theme(fig_s,260), use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    with ch4:
-        st.subheader("Categories share")
-        cat_data = []
-        for period_lbl, d in [(cur_label, df_cur), (prev_label, df_prev)]:
+    with cc4:
+        st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+        st.markdown('<p class="section-title">Platform share</p>', unsafe_allow_html=True)
+        cat_rows = []
+        for lbl, d in [(cur_lbl,df_c),(prev_lbl,df_p)]:
             tot = max(len(d),1)
             for plat, grp in d.groupby("platform"):
-                cat_data.append({"Period":period_lbl,"Platform":plat,"Pct":round(len(grp)/tot*100,1)})
-        if cat_data:
-            cdf = pd.DataFrame(cat_data)
+                cat_rows.append({"Period":lbl,"Platform":plat,"Pct":round(len(grp)/tot*100,1)})
+        if cat_rows:
+            cdf = pd.DataFrame(cat_rows)
             fig_cat = px.bar(cdf,x="Period",y="Pct",color="Platform",barmode="stack",
-                color_discrete_sequence=px.colors.qualitative.Set2)
-            fig_cat.update_layout(height=280,margin=dict(l=0,r=0,t=10,b=0),
-                plot_bgcolor="white",paper_bgcolor="white",
-                yaxis_title="%",legend=dict(orientation="h",y=1.12))
-            fig_cat.update_yaxes(gridcolor="#f5f5f5")
-            st.plotly_chart(fig_cat,use_container_width=True)
+                color_discrete_sequence=CHART_COLORS)
+            fig_cat.update_yaxes(ticksuffix="%")
+            st.plotly_chart(chart_theme(fig_cat,260), use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
 
 # ════════════════════════════════════════════════════════════════════════════════
-# TAB 3: TOPIC ANALYSIS
+# TOPIC ANALYSIS
 # ════════════════════════════════════════════════════════════════════════════════
+_TOPICS = [
+    ("🏆 BAFTA Win",                 ["bafta","leading actress","award","winner","wins"]),
+    ("🎬 Prisoner 951",              ["prisoner 951","prisoner951"]),
+    ("🕊️ Nazanin Zaghari-Ratcliffe", ["nazanin","zaghari","ratcliffe"]),
+    ("🇮🇷 Iranian Actress",          ["iranian actress","iran","persian"]),
+    ("💛 Save the Children",         ["save the children","savechildren","charity"]),
+    ("📺 BAFTA TV Awards 2026",      ["bafta tv","bafta television","bafta 2026"]),
+    ("🎭 Film & TV Reviews",         ["review","drama","series","episode"]),
+    ("🎙️ Interviews",               ["interview","speaks","talks to","q&a","in conversation"]),
+]
+
 with tab_topics:
-    st.markdown("### AI Topic Analysis")
-    st.caption("Automatically clusters coverage into key themes. Mentions may appear in multiple topics.")
+    st.markdown(f'<h2 style="font-size:20px;font-weight:700;color:{DARK};margin-bottom:6px">Topic Analysis</h2>', unsafe_allow_html=True)
+    st.markdown(f'<p style="color:{SLATE};font-size:14px;margin-bottom:24px">Coverage automatically clustered into key themes. Mentions may appear in multiple topics.</p>', unsafe_allow_html=True)
 
-    tp_col, _ = st.columns([2,3])
-    tp_period = tp_col.selectbox("Period", list(period_opts.keys()), key="tp_period")
-    tp_days = period_opts[tp_period]
+    tp_col, _ = st.columns([2,4])
+    tp_days = PERIOD_OPTS[tp_col.selectbox("Period", list(PERIOD_OPTS.keys()), key="tp_period")]
     tp_cutoff = pd.Timestamp.now() - pd.Timedelta(days=tp_days) if tp_days < 9999 else pd.Timestamp("2000-01-01")
     df_tp = df_all[df_all["date"] >= tp_cutoff].copy() if tp_days < 9999 else df_all.copy()
+    df_tp["reach"] = df_tp.apply(reach_est, axis=1)
+    df_tp["ave"]   = df_tp.apply(ave_est, axis=1)
 
-    topics_df = classify_topics(df_tp)
-
-    if topics_df.empty:
-        st.info("Not enough data for topic analysis. Run the monitor first.")
-    else:
-        total_reach_tp = topics_df["reach"].sum()
-
-        # Summary chart
-        fig_t = go.Figure()
-        fig_t.add_trace(go.Bar(
-            name="Mentions", x=topics_df["topic"], y=topics_df["mentions"],
-            marker_color="#2563eb", text=topics_df["mentions"], textposition="outside",
+    text_col = (df_tp["title"].fillna("") + " " + df_tp["snippet"].fillna("")).str.lower()
+    topic_rows = []
+    for name, kws in _TOPICS:
+        mask = text_col.apply(lambda t: any(k in t for k in kws))
+        sub = df_tp[mask]
+        if sub.empty: continue
+        topic_rows.append(dict(
+            name=name, mentions=len(sub), reach=int(sub["reach"].sum()),
+            ave=sub["ave"].sum(),
+            pos=int((sub["sentiment"]=="positive").sum()),
+            neg=int((sub["sentiment"]=="negative").sum()),
+            kws=kws,
         ))
-        fig_t.update_layout(height=300, margin=dict(l=0,r=0,t=20,b=0),
-            plot_bgcolor="white", paper_bgcolor="white",
-            title="Mentions per topic")
-        fig_t.update_yaxes(gridcolor="#f5f5f5")
-        st.plotly_chart(fig_t, use_container_width=True)
+    if topic_rows:
+        total_m = sum(r["mentions"] for r in topic_rows)
+        for r in topic_rows:
+            r["sov"] = r["mentions"]/total_m*100
 
         # SOV chart
-        fig_sov = px.pie(topics_df, values="sov", names="topic", hole=0.4,
-            title="Share of Voice",
-            color_discrete_sequence=px.colors.qualitative.Set3)
-        fig_sov.update_traces(textposition="inside", textinfo="percent+label")
-        fig_sov.update_layout(height=320, margin=dict(l=0,r=0,t=40,b=0), paper_bgcolor="white")
-        st.plotly_chart(fig_sov, use_container_width=True)
+        tc1, tc2 = st.columns([3,2])
+        with tc1:
+            st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+            st.markdown('<p class="section-title">Mentions by topic</p>', unsafe_allow_html=True)
+            names_sorted = sorted(topic_rows, key=lambda x: x["mentions"])
+            fig_t = go.Figure(go.Bar(
+                y=[r["name"] for r in names_sorted],
+                x=[r["mentions"] for r in names_sorted],
+                orientation="h",
+                marker=dict(color=ACCENT, opacity=0.85),
+                text=[r["mentions"] for r in names_sorted],
+                textposition="outside",
+            ))
+            fig_t.update_xaxes(gridcolor="#f1f5f9")
+            st.plotly_chart(chart_theme(fig_t, 320), use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+        with tc2:
+            st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+            st.markdown('<p class="section-title">Share of voice</p>', unsafe_allow_html=True)
+            fig_sov = px.pie(
+                pd.DataFrame(topic_rows), values="sov", names="name",
+                hole=0.5, color_discrete_sequence=CHART_COLORS)
+            fig_sov.update_traces(textposition="inside", textinfo="percent",
+                textfont=dict(size=11))
+            fig_sov.update_layout(height=320, showlegend=True,
+                legend=dict(orientation="v", x=1.02, y=0.5, font=dict(size=10)),
+                **{k:v for k,v in PLOTLY_LAYOUT.items() if k not in ("xaxis","yaxis","legend")})
+            st.plotly_chart(fig_sov, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        st.divider()
-        st.subheader("Topic details")
-
-        # Table header
-        h1,h2,h3,h4,h5,h6 = st.columns([3,1,2,2,1,1])
-        h1.markdown("**Topic**")
-        h2.markdown("**Mentions**")
-        h3.markdown("**Reach**")
-        h4.markdown("**Share of Voice**")
-        h5.markdown("**Positive**")
-        h6.markdown("**Negative**")
-        st.divider()
-
-        for _, row in topics_df.sort_values("mentions", ascending=False).iterrows():
-            c1,c2,c3,c4,c5,c6 = st.columns([3,1,2,2,1,1])
-            c1.markdown(f"**{row['topic']}**")
-            c2.markdown(str(int(row["mentions"])))
-            c3.markdown(_fmt_reach(int(row["reach"])))
-            # SOV bar
-            sov_pct = float(row["sov"])
-            c4.markdown(f"""
-                <div style="display:flex;align-items:center;gap:8px">
-                  <div style="background:#e5e7eb;border-radius:4px;width:100%;height:8px">
-                    <div style="background:#2563eb;width:{min(sov_pct,100):.0f}%;height:100%;border-radius:4px"></div>
-                  </div>
-                  <span style="white-space:nowrap;font-size:.85rem">{sov_pct:.1f}%</span>
-                </div>
+        st.markdown("<br>", unsafe_allow_html=True)
+        for r in sorted(topic_rows, key=lambda x: x["mentions"], reverse=True):
+            sov_pct = r["sov"]
+            st.markdown(f"""
+            <div class="topic-row">
+              <div class="topic-name">{r['name']}</div>
+              <div class="topic-stat">
+                <div class="topic-stat-val">{r['mentions']}</div>
+                <div class="topic-stat-lbl">Mentions</div>
+              </div>
+              <div class="topic-stat">
+                <div class="topic-stat-val">{fmt_reach(r['reach'])}</div>
+                <div class="topic-stat-lbl">Reach</div>
+              </div>
+              <div class="sov-bar-wrap">
+                <div class="sov-bar-bg"><div class="sov-bar-fill" style="width:{min(sov_pct,100):.0f}%"></div></div>
+                <span class="sov-pct">{sov_pct:.1f}% share of voice</span>
+              </div>
+              <div class="topic-stat">
+                <div class="topic-stat-val" style="color:{GREEN}">{r['pos']}</div>
+                <div class="topic-stat-lbl">Positive</div>
+              </div>
+              <div class="topic-stat">
+                <div class="topic-stat-val" style="color:{RED}">{r['neg']}</div>
+                <div class="topic-stat-lbl">Negative</div>
+              </div>
+            </div>
             """, unsafe_allow_html=True)
-            c5.markdown(f'<span style="color:#16a34a;font-weight:600">{int(row["positive"])}</span>', unsafe_allow_html=True)
-            c6.markdown(f'<span style="color:#dc2626;font-weight:600">{int(row["negative"])}</span>', unsafe_allow_html=True)
 
-        st.divider()
-
-        # Drill into a topic
-        sel_topic = st.selectbox("Drill into topic →", topics_df["topic"].tolist(), key="drill_topic")
-        if sel_topic:
-            kws = next((kws for name,kws in _TOPIC_CLUSTERS if name==sel_topic), [])
-            text_col = (df_tp["title"].fillna("") + " " + df_tp["snippet"].fillna("")).str.lower()
-            topic_items = df_tp[text_col.apply(lambda t: any(k in t for k in kws))].copy()
-            topic_items["reach"] = topic_items.apply(reach_est, axis=1)
-            st.markdown(f"**{len(topic_items)} mentions** for *{sel_topic}*")
-            disp2 = topic_items[["date","title","source","platform","tier","sentiment","url"]].copy()
-            disp2["date"] = disp2["date"].dt.strftime("%Y-%m-%d")
-            disp2 = disp2.fillna("—")
-            st.dataframe(disp2, use_container_width=True, height=400, hide_index=True,
-                column_config={
-                    "url": st.column_config.LinkColumn("Link", display_text="Open →"),
-                    "title": st.column_config.TextColumn("Title", width="large"),
-                    "date": st.column_config.TextColumn("Date", width="small"),
-                })
+        st.markdown("<br>", unsafe_allow_html=True)
+        drill = st.selectbox("Drill into topic", [r["name"] for r in topic_rows], key="drill")
+        drill_kws = next(r["kws"] for r in topic_rows if r["name"]==drill)
+        drill_mask = text_col.apply(lambda t: any(k in t for k in drill_kws))
+        drill_df = df_tp[drill_mask][["date","title","source","platform","tier","sentiment","url"]].copy()
+        drill_df["date"] = drill_df["date"].dt.strftime("%Y-%m-%d")
+        drill_df = drill_df.fillna("—")
+        st.markdown(f'<p style="color:{SLATE};font-size:13px;margin-bottom:8px">{len(drill_df)} mentions for <b>{drill}</b></p>', unsafe_allow_html=True)
+        st.dataframe(drill_df, use_container_width=True, height=380, hide_index=True,
+            column_config={
+                "url":   st.column_config.LinkColumn("Link", display_text="Open ↗"),
+                "title": st.column_config.TextColumn("Title", width="large"),
+                "date":  st.column_config.TextColumn("Date", width="small"),
+            })
+    else:
+        st.info("Not enough data for topic analysis. Run the monitor to fetch more coverage.")
 
 
 # ════════════════════════════════════════════════════════════════════════════════
-# TAB 4: INSTAGRAM
+# INSTAGRAM
 # ════════════════════════════════════════════════════════════════════════════════
-with tab_instagram:
-    st.markdown("### 📸 Instagram @nargesrashidi")
+with tab_ig:
+    st.markdown(f'<h2 style="font-size:20px;font-weight:700;color:{DARK};margin-bottom:6px">Instagram <span style="color:{SLATE};font-weight:400">@nargesrashidi</span></h2>', unsafe_allow_html=True)
+
     if ig_all.empty:
         st.info("No Instagram data yet. Run `python3 run.py` to fetch.")
     else:
-        ig_period_opts = {"Last 14 days":14,"Last 30 days":30,"Last 90 days":90,"All time":9999}
-        ig_days = ig_period_opts[st.selectbox("Period", list(ig_period_opts.keys()), key="ig_period")]
-        ig_cutoff = pd.Timestamp.now() - pd.Timedelta(days=ig_days) if ig_days < 9999 else pd.Timestamp("2000-01-01")
-        ig_df = ig_all[ig_all["date"] >= ig_cutoff] if ig_days < 9999 else ig_all
+        ig_days = PERIOD_OPTS[st.selectbox("Period", list(PERIOD_OPTS.keys()), index=2, key="ig_period")]
+        ig_cut  = pd.Timestamp.now() - pd.Timedelta(days=ig_days) if ig_days < 9999 else pd.Timestamp("2000-01-01")
+        ig_df   = ig_all[ig_all["date"] >= ig_cut] if ig_days < 9999 else ig_all
 
         if ig_df.empty:
             st.info("No posts in this period.")
         else:
-            # Stats
-            im1,im2,im3 = st.columns(3)
-            im1.metric("Posts", len(ig_df))
-            im2.metric("Total likes", f"{ig_df['likes'].sum():,}")
+            im1, im2, im3, im4 = st.columns(4)
+            im1.metric("Posts",          len(ig_df))
+            im2.metric("Total likes",    f"{ig_df['likes'].sum():,}")
             im3.metric("Total comments", f"{ig_df['comments'].sum():,}")
+            im4.metric("Avg likes/post", f"{int(ig_df['likes'].mean()):,}")
 
-            st.divider()
-
-            # Engagement chart
             if ig_df["date"].notna().any():
+                st.markdown('<div class="chart-card" style="margin-top:20px">', unsafe_allow_html=True)
+                st.markdown('<p class="section-title">Engagement per post</p>', unsafe_allow_html=True)
                 fig_ig = go.Figure()
-                fig_ig.add_trace(go.Bar(x=ig_df["date"].dt.strftime("%d %b"),
-                    y=ig_df["likes"], name="Likes", marker_color="#ec4899"))
-                fig_ig.add_trace(go.Bar(x=ig_df["date"].dt.strftime("%d %b"),
-                    y=ig_df["comments"], name="Comments", marker_color="#f97316"))
-                fig_ig.update_layout(height=250,barmode="group",
-                    margin=dict(l=0,r=0,t=10,b=0),
-                    plot_bgcolor="white",paper_bgcolor="white",
-                    legend=dict(orientation="h",y=1.12))
-                fig_ig.update_yaxes(gridcolor="#f5f5f5")
-                st.plotly_chart(fig_ig,use_container_width=True)
+                labels = ig_df["date"].dt.strftime("%d %b")
+                fig_ig.add_trace(go.Bar(x=labels, y=ig_df["likes"], name="Likes",
+                    marker_color="#ec4899"))
+                fig_ig.add_trace(go.Bar(x=labels, y=ig_df["comments"], name="Comments",
+                    marker_color="#f97316"))
+                fig_ig.update_layout(barmode="group")
+                st.plotly_chart(chart_theme(fig_ig, 240), use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
 
-            st.divider()
+            st.markdown("<br>", unsafe_allow_html=True)
             cols = st.columns(3)
             for i, (_, post) in enumerate(ig_df.iterrows()):
                 with cols[i % 3]:
-                    cap = (post.get("caption") or "")[:220]
-                    st.markdown(f"""<div class="mention-card">
-                      <b>{post['date']}</b> · <span style="color:#6b7280">{post.get('media_type','')}</span><br>
-                      <p style="font-size:.9rem;margin:8px 0;color:#374151">{cap}</p>
-                      ❤️ <b>{post.get('likes',0):,}</b> &nbsp;
-                      💬 <b>{post.get('comments',0):,}</b><br>
-                      <a href="{post.get('url','')}" target="_blank" style="font-size:.85rem">View post →</a>
-                    </div>""", unsafe_allow_html=True)
+                    cap = (post.get("caption") or "")[:240]
+                    st.markdown(f"""
+                    <div class="ig-card">
+                      <div class="ig-date">{post['date']} · {post.get('media_type','')}</div>
+                      <p class="ig-caption">{cap}</p>
+                      <div class="ig-stats">
+                        <span>❤️ {post.get('likes',0):,} likes</span>
+                        <span>💬 {post.get('comments',0):,} comments</span>
+                      </div>
+                      <a href="{post.get('url','')}" target="_blank" class="ig-link">View on Instagram ↗</a>
+                    </div>
+                    """, unsafe_allow_html=True)
 
-st.divider()
-st.caption("If I Only Knew PR · Narges Rashidi Press Monitor · Updates every Monday 8am")
+st.markdown(f"""
+<div style="text-align:center;padding:40px 0 20px;color:{SLATE};font-size:12px">
+  If I Only Knew PR &nbsp;·&nbsp; Narges Rashidi Press Monitor &nbsp;·&nbsp; Updates every Monday
+</div>
+""", unsafe_allow_html=True)
