@@ -1,0 +1,30 @@
+# Secrets — never commit
+.env
+*.env
+
+# Local database (too large, use data/ exports instead)
+*.db
+*.db-shm
+*.db-wal
+
+# Logs & generated files
+*.log
+press_cron.log
+press_narges.csv
+press_report_*.html
+press_digest_*.md
+
+# Instagram session
+.instaloader_*
+
+# twscrape
+twscrape_accounts.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+
+# The exported data (committed intentionally by the sync script)
+# data/ is NOT ignored — it's what Streamlit Cloud reads
