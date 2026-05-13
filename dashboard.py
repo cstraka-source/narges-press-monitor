@@ -1,6 +1,9 @@
 """
 Narges Rashidi — Press Intelligence Dashboard
 If I Only Knew PR
+
+Live:   https://narges-press-monitor.streamlit.app
+Local:  streamlit run dashboard.py
 """
 import io
 import re

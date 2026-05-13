@@ -5,6 +5,9 @@ This directory is a Brand24 replacement for client Narges Rashidi (Iranian actre
 ## What this does
 Automatically monitors press, social media, and YouTube for mentions of Narges Rashidi. Stores everything in SQLite, pushes to a Notion database, and generates an interactive Streamlit dashboard + weekly HTML report.
 
+## Live dashboard
+**https://narges-press-monitor.streamlit.app** — public Streamlit Cloud deployment, auto-updates from GitHub (`cstraka-source/narges-press-monitor`) every Monday after the local cron pushes new data.
+
 ## Run it
 ```bash
 cd '/Users/christianstraka/Library/CloudStorage/Dropbox/06_COMPANIES/If_I_Only_Knew/Press'
@@ -13,7 +16,7 @@ python3 run.py --days 30   # wider lookback
 python3 run.py --no-notion # SQLite only (no Notion push)
 python3 report.py --open   # generate HTML report and open in browser
 python3 digest.py          # generate weekly text digest → Notion page
-streamlit run dashboard.py # open interactive dashboard in browser
+streamlit run dashboard.py # open interactive dashboard locally
 ```
 
 ## Cron (every Monday 8am)
