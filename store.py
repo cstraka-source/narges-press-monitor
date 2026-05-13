@@ -6,15 +6,15 @@ from pathlib import Path
 DB_PATH = Path(__file__).parent / "press_narges.db"
 
 def score_sentiment(text: str) -> str:
-    """Return 'positive', 'negative', or 'neutral'."""
+    """Subject-aware sentiment: 'positive' | 'neutral' | 'negative'.
+
+    Delegates to sentiment.py which uses Claude API if ANTHROPIC_API_KEY is
+    set, otherwise an improved VADER scorer that strips show titles and
+    only looks at text near 'Narges Rashidi'.
+    """
     try:
-        from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
-        score = SentimentIntensityAnalyzer().polarity_scores(text)["compound"]
-        if score >= 0.05:
-            return "positive"
-        if score <= -0.05:
-            return "negative"
-        return "neutral"
+        from sentiment import score_sentiment as _s
+        return _s(text)
     except Exception:
         return "neutral"
 
