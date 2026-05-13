@@ -591,9 +591,9 @@ with tab_overview:
             line=dict(color=TEAL, width=3, dash="dot"), yaxis="y2",
             hovertemplate="<b>%{x}</b><br>%{y:,.0f} reach<extra></extra>"))
         fig.update_layout(
-            yaxis=dict(title="Mentions", gridcolor="#f1f5f9", titlefont=dict(color=ACCENT)),
-            yaxis2=dict(title="Reach", overlaying="y", side="right", showgrid=False,
-                        titlefont=dict(color=TEAL), tickformat=".2s"),
+            yaxis=dict(title=dict(text="Mentions", font=dict(color=ACCENT)), gridcolor="#f1f5f9"),
+            yaxis2=dict(title=dict(text="Reach", font=dict(color=TEAL)),
+                        overlaying="y", side="right", showgrid=False, tickformat=".2s"),
         )
         st.plotly_chart(style_chart(fig, 320), use_container_width=True)
 
