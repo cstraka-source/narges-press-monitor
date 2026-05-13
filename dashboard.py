@@ -28,6 +28,72 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ── Block search engine indexing ──────────────────────────────────────────────
+st.html("""
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
+<meta name="googlebot" content="noindex, nofollow">
+<meta name="bingbot" content="noindex, nofollow">
+""")
+
+
+# ── Password gate ─────────────────────────────────────────────────────────────
+def check_password() -> bool:
+    """Returns True if user has entered the correct password (or no password is set)."""
+    try:
+        required_pw = st.secrets.get("DASHBOARD_PASSWORD", "")
+    except Exception:
+        required_pw = ""
+
+    # No password configured (e.g. local dev) → allow through
+    if not required_pw:
+        return True
+
+    if st.session_state.get("auth_ok"):
+        return True
+
+    # Hide sidebar on the login screen
+    st.html("""
+    <style>
+      [data-testid="stSidebar"] { display: none !important; }
+      [data-testid="collapsedControl"] { display: none !important; }
+      .block-container { max-width: 480px !important; padding-top: 6rem !important; }
+      #MainMenu, footer, header { visibility: hidden; }
+    </style>
+    """)
+
+    st.markdown("""
+    <div style="text-align:center;margin-bottom:32px;">
+      <div style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:#64748b;font-weight:700;margin-bottom:8px;">
+        If I Only Knew PR
+      </div>
+      <div style="font-size:32px;font-weight:800;color:#0f172a;letter-spacing:-0.03em;line-height:1.1;">
+        Narges Rashidi
+      </div>
+      <div style="font-size:14px;color:#64748b;margin-top:6px;">
+        Press Intelligence Dashboard
+      </div>
+    </div>
+    <div style="background:white;border:1px solid #e2e8f0;border-radius:14px;padding:32px;box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+      <div style="font-size:14px;font-weight:600;color:#0f172a;margin-bottom:4px;">Sign in</div>
+      <div style="font-size:13px;color:#64748b;margin-bottom:20px;">Enter the access password to continue.</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    pw = st.text_input("Password", type="password", label_visibility="collapsed",
+                       placeholder="Password", key="pw_input")
+    if st.button("Sign in", type="primary", use_container_width=True):
+        if pw == required_pw:
+            st.session_state["auth_ok"] = True
+            st.rerun()
+        else:
+            st.error("Incorrect password.")
+
+    return False
+
+
+if not check_password():
+    st.stop()
+
 # ── Design tokens ─────────────────────────────────────────────────────────────
 ACCENT   = "#4f46e5"
 TEAL     = "#0891b2"
