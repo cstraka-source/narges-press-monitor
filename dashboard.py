@@ -1409,7 +1409,7 @@ PRESS ITEMS (sorted by reach, most-impactful first):
                     placeholder = st.empty()
                     full = ""
                     with client.messages.stream(
-                        model="claude-sonnet-4-7",
+                        model="claude-sonnet-4-5",
                         max_tokens=1500,
                         system=system_prompt,
                         messages=messages,
