@@ -532,14 +532,18 @@ with st.sidebar:
 
     st.divider()
 
+    def _clear_filters():
+        # Callback runs before the next script run, so we can mutate
+        # widget-bound session_state without hitting the API error.
+        for k in ("qf_source",):
+            if k in st.session_state:
+                del st.session_state[k]
+
     refresh_col, clear_col = st.columns(2)
     if refresh_col.button("↺  Refresh", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
-    if clear_col.button("✕  Clear filters", use_container_width=True):
-        for k in ("qf_source",):
-            st.session_state[k] = []
-        st.rerun()
+    clear_col.button("✕  Clear filters", use_container_width=True, on_click=_clear_filters)
 
     last_update = df_all["created_at"].max() if not df_all.empty else "—"
     st.markdown(f"""
@@ -635,10 +639,10 @@ c6.metric("Presence Score",  f"{presence_score}/100",   "out of 100")
 # ── TABS ──────────────────────────────────────────────────────────────────────
 tabs = st.tabs([
     "Overview", "Top Stories", "Sources & Influence", "Trends & Topics",
-    "Compare Periods", "Topic Analysis", "Instagram",
+    "Compare Periods", "Topic Analysis", "Instagram", "✨ Ask AI",
 ])
 (tab_overview, tab_stories, tab_sources, tab_trends,
- tab_compare, tab_topics, tab_ig) = tabs
+ tab_compare, tab_topics, tab_ig, tab_ai) = tabs
 
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -1272,6 +1276,169 @@ with tab_ig:
                         </div>
                         <a href="{url}" target="_blank" style="font-size:11px;color:#4f46e5;text-decoration:none;font-weight:600;">View on Instagram ↗</a>
                         """, unsafe_allow_html=True)
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# TAB 8 — ASK AI (chatbot with full data context)
+# ════════════════════════════════════════════════════════════════════════════════
+with tab_ai:
+    st.subheader("Ask AI about the data")
+    st.caption("Get insights, summaries, action items, and answers from Claude — using only the items currently visible on the dashboard (after filters).")
+
+    # Build the data context once per filter combination
+    def _build_ai_context(df_in: pd.DataFrame, ig_in: pd.DataFrame) -> str:
+        if df_in.empty:
+            return "No press items match the current filters."
+        # Compact each item to a few key fields, cap at 80 most-impactful
+        sample = df_in.sort_values("reach_calc", ascending=False).head(80)
+        lines = []
+        for _, r in sample.iterrows():
+            date_s = r["date"].strftime("%Y-%m-%d") if pd.notna(r.get("date")) else "?"
+            lines.append(
+                f"- [{date_s}] [{r.get('platform','')}/{r.get('tier','')}/{r.get('sentiment','neutral')}] "
+                f"{(r.get('source') or '?')}: {(r.get('title') or '')[:140]}"
+            )
+        press_block = "\n".join(lines)
+
+        # Top sources summary
+        src_top = (df_in.groupby("source")
+                   .size().reset_index(name="n")
+                   .sort_values("n", ascending=False).head(10))
+        srcs_block = "\n".join(f"- {r['source']}: {r['n']} mentions" for _, r in src_top.iterrows())
+
+        # Aggregates
+        total = len(df_in)
+        pos = (df_in["sentiment"]=="positive").sum()
+        neg = (df_in["sentiment"]=="negative").sum()
+        t1 = (df_in["tier"]=="Tier 1").sum()
+        reach = int(df_in["reach_calc"].sum())
+
+        ig_block = ""
+        if not ig_in.empty:
+            top_ig = ig_in.sort_values("likes", ascending=False).head(15)
+            ig_lines = []
+            for _, p in top_ig.iterrows():
+                date_s = p["date"].strftime("%Y-%m-%d") if pd.notna(p.get("date")) else "?"
+                src_t = p.get("source_type","own_post")
+                user = p.get("username","")
+                cap = (p.get("caption") or "")[:100].replace("\n", " ")
+                ig_lines.append(f"- [{date_s}] [{src_t}] @{user} ({p.get('likes',0)} likes): {cap}")
+            ig_block = "\n\nINSTAGRAM (top posts by likes):\n" + "\n".join(ig_lines)
+
+        return f"""SUMMARY:
+- {total} press mentions in view
+- {pos} positive, {neg} negative
+- {t1} Tier 1 hits
+- Estimated total reach: {reach:,}
+
+TOP SOURCES:
+{srcs_block}
+
+PRESS ITEMS (sorted by reach, most-impactful first):
+{press_block}{ig_block}
+"""
+
+    ctx_text = _build_ai_context(df, ig_all)
+
+    # Suggested prompts
+    st.markdown("**Quick prompts:**")
+    qp_cols = st.columns(4)
+    suggested = [
+        ("📈 Weekly summary",     "Give me a concise 5-bullet summary of what happened with Narges Rashidi's press this week. Highlight the biggest wins, any concerning items, and tone shifts."),
+        ("🎯 What's working",     "Which angles, outlets, and messages are getting the most traction? What story patterns are landing well? Be specific with sources."),
+        ("⚠️ Risks & gaps",       "Are there any concerning patterns, missing coverage, or gaps in tier/platform mix? Anything that needs attention? Anything negative worth noting?"),
+        ("💡 Next actions",       "Based on this data, what 3 concrete PR actions should we take next week? Be tactical. Suggest specific outlets, angles, and timing."),
+    ]
+    if "ai_chat" not in st.session_state:
+        st.session_state["ai_chat"] = []  # list of (role, content)
+    if "ai_prefill" not in st.session_state:
+        st.session_state["ai_prefill"] = ""
+
+    for (label, prompt), col in zip(suggested, qp_cols):
+        if col.button(label, use_container_width=True, key=f"qp_{label}"):
+            st.session_state["ai_prefill"] = prompt
+
+    # Render conversation so far
+    for role, content in st.session_state["ai_chat"]:
+        with st.chat_message(role):
+            st.markdown(content)
+
+    # Chat input
+    user_q = st.chat_input("Ask anything about the press data…")
+    if not user_q and st.session_state["ai_prefill"]:
+        user_q = st.session_state["ai_prefill"]
+        st.session_state["ai_prefill"] = ""
+
+    if user_q:
+        st.session_state["ai_chat"].append(("user", user_q))
+        with st.chat_message("user"):
+            st.markdown(user_q)
+
+        # Build messages for Claude (carrying short conversational memory)
+        import os
+        api_key = os.getenv("ANTHROPIC_API_KEY", "")
+        try:
+            api_key = api_key or st.secrets.get("ANTHROPIC_API_KEY", "")
+        except Exception:
+            pass
+
+        if not api_key:
+            with st.chat_message("assistant"):
+                st.warning("AI not configured. The dashboard owner needs to add `ANTHROPIC_API_KEY` to Streamlit Cloud Secrets.")
+            st.session_state["ai_chat"].append(("assistant", "AI not configured."))
+        else:
+            system_prompt = (
+                "You are a senior PR strategist analysing press coverage for Iranian-British "
+                "actress Narges Rashidi (2026 BAFTA Leading Actress winner for *Prisoner 951*). "
+                "Below is a structured snapshot of the current press monitoring view. "
+                "Always ground answers in the data — cite specific sources, dates, and counts. "
+                "Be concise and actionable. Use bullet points when listing. "
+                "If asked something the data can't answer, say so briefly.\n\n"
+                f"=== CURRENT PRESS DATA SNAPSHOT ===\n{ctx_text}"
+            )
+
+            # Include short conversation history for follow-up questions
+            messages = []
+            for role, content in st.session_state["ai_chat"][-8:]:
+                messages.append({"role": role, "content": content})
+
+            try:
+                from anthropic import Anthropic
+                client = Anthropic(api_key=api_key)
+                with st.chat_message("assistant"):
+                    placeholder = st.empty()
+                    full = ""
+                    with client.messages.stream(
+                        model="claude-sonnet-4-7",
+                        max_tokens=1500,
+                        system=system_prompt,
+                        messages=messages,
+                    ) as stream:
+                        for chunk in stream.text_stream:
+                            full += chunk
+                            placeholder.markdown(full + "▌")
+                    placeholder.markdown(full)
+                st.session_state["ai_chat"].append(("assistant", full))
+            except Exception as e:
+                with st.chat_message("assistant"):
+                    st.error(f"AI error: {type(e).__name__}: {str(e)[:200]}")
+                st.session_state["ai_chat"].append(("assistant", f"Error: {e}"))
+
+    if st.session_state["ai_chat"]:
+        if st.button("🗑 Clear conversation", key="clear_ai_chat"):
+            st.session_state["ai_chat"] = []
+            st.rerun()
+
+    with st.expander("ℹ️ How this works"):
+        st.markdown(f"""
+        - Claude receives a snapshot of the **{len(df):,} press items currently in view** (after sidebar filters),
+          plus the top Instagram posts.
+        - Asking a question = one API call. Cost is roughly **less than a cent per question** with Claude Sonnet.
+        - The AI can't see anything outside this dashboard. To get answers about specific periods or platforms,
+          adjust the sidebar filters first, then ask.
+        - Conversation history is kept for follow-up questions ("expand on that", "give me sources" etc.)
+          but cleared when you reload the page.
+        """)
 
 
 # ── Footer ────────────────────────────────────────────────────────────────────
