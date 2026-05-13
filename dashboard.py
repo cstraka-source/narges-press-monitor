@@ -496,6 +496,8 @@ if f_search:
     m = (df["title"].str.contains(f_search, case=False, na=False) |
          df["snippet"].str.contains(f_search, case=False, na=False) |
          df["source"].str.contains(f_search, case=False, na=False))
+    if "full_text" in df.columns:
+        m = m | df["full_text"].str.contains(f_search, case=False, na=False)
     df = df[m]
 
 if not df.empty:
