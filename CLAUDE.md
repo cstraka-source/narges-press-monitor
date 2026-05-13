@@ -42,28 +42,27 @@ streamlit run dashboard.py # open interactive dashboard locally
 | `press_narges.db` | SQLite database (source of truth) |
 | `.env` | All API keys and credentials |
 
-## API Keys & Credentials (.env)
-```
-NEWS_API_KEY=***REMOVED***
-YOUTUBE_API_KEY=***REMOVED***
-GUARDIAN_API_KEY=***REMOVED***
-NOTION_TOKEN=***REMOVED***
-NOTION_DATABASE_ID=520eec68cfea46e5a2c375cb24be05bd
-SEARCH_QUERY=Narges Rashidi
-BLUESKY_IDENTIFIER=pressmonitoriiok.bsky.social
-BLUESKY_PASSWORD=***REMOVED***
-INSTAGRAM_USERNAME=nargesrashidi
-INSTAGRAM_LOGIN_USER=mindsizesports
-INSTAGRAM_LOGIN_PASS=***REMOVED***
-X_EMAIL=c.straka@icloud.com
-X_USERNAME=strakala
-X_PASSWORD=***REMOVED***
-# FB_ACCESS_TOKEN=  (optional — Facebook Graph API user token for richer FB data)
-```
+## API Keys & Credentials
+
+**ALL secrets live in `.env` (gitignored) — never in this file, never in the repo.**
+
+The `.env` file holds:
+- `NEWS_API_KEY` — newsapi.org
+- `YOUTUBE_API_KEY` — console.cloud.google.com
+- `GUARDIAN_API_KEY` — open-platform.theguardian.com
+- `NOTION_TOKEN`, `NOTION_DATABASE_ID` — notion.so/my-integrations
+- `BLUESKY_IDENTIFIER`, `BLUESKY_PASSWORD` — bsky.app monitor account
+- `INSTAGRAM_USERNAME` (target profile), `INSTAGRAM_LOGIN_USER`, `INSTAGRAM_LOGIN_PASS` — instagrapi auth
+- `X_EMAIL`, `X_USERNAME`, `X_PASSWORD` — twscrape auth
+- `ANTHROPIC_API_KEY` — subject-aware sentiment scoring
+- `SEARCH_QUERY` — defaults to `Narges Rashidi`
+- `DASHBOARD_PASSWORD` — only set in Streamlit Cloud Secrets (encrypted, never in local `.env`)
+- (optional) `FB_ACCESS_TOKEN` — Facebook Graph API user token
+
+To inspect: `cat .env` on the local Mac. Never echo these values into any file in the repo.
 
 ## Notion Setup
-- Integration token: `***REMOVED***`
-- Database ID: `520eec68cfea46e5a2c375cb24be05bd`
+- Database ID is `NOTION_DATABASE_ID` in `.env`
 - Parent page: Narges (ID `20fe07a1-14a7-8040-bd50-f0950a4569e7`)
 - The integration must be connected to the Narges page in Notion settings
 
