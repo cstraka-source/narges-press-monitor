@@ -58,10 +58,9 @@ st.markdown(f"""
     color: {DARK};
   }}
 
-  /* Hide Streamlit chrome */
-  #MainMenu, footer, header {{ visibility: hidden; }}
+  /* Hide Streamlit chrome (but keep toolbar so error messages can be dismissed) */
+  #MainMenu, footer {{ visibility: hidden; }}
   .stDeployButton {{ display: none; }}
-  [data-testid="stToolbar"] {{ display: none; }}
   [data-testid="collapsedControl"] {{ color: {DARK}; }}
 
   /* ── Sidebar ── */
@@ -671,15 +670,17 @@ with tab_ov:
     # ── Full table ──
     st.markdown(f'<p class="section-title" style="margin-top:24px">All mentions ({len(df):,})</p>', unsafe_allow_html=True)
     disp = df[["date","title","source","platform","tier","type","sentiment","views","url"]].copy()
-    disp["date"] = disp["date"].dt.strftime("%Y-%m-%d")
-    disp = disp.fillna("—")
+    disp["date"] = disp["date"].dt.strftime("%Y-%m-%d").fillna("—")
+    # Keep numeric columns numeric; fill text columns only
+    for c in ("title","source","platform","tier","type","sentiment","url"):
+        disp[c] = disp[c].fillna("—")
     st.dataframe(disp, use_container_width=True, height=480, hide_index=True,
         column_config={
             "url":   st.column_config.LinkColumn("Link", display_text="Open ↗"),
             "title": st.column_config.TextColumn("Title", width="large"),
             "date":  st.column_config.TextColumn("Date", width="small"),
             "tier":  st.column_config.TextColumn("Tier", width="small"),
-            "views": st.column_config.NumberColumn("Views"),
+            "views": st.column_config.NumberColumn("Views", format="%d"),
         })
 
 
@@ -938,8 +939,9 @@ with tab_topics:
         drill_kws = next(r["kws"] for r in topic_rows if r["name"]==drill)
         drill_mask = text_col.apply(lambda t: any(k in t for k in drill_kws))
         drill_df = df_tp[drill_mask][["date","title","source","platform","tier","sentiment","url"]].copy()
-        drill_df["date"] = drill_df["date"].dt.strftime("%Y-%m-%d")
-        drill_df = drill_df.fillna("—")
+        drill_df["date"] = drill_df["date"].dt.strftime("%Y-%m-%d").fillna("—")
+        for c in ("title","source","platform","tier","sentiment","url"):
+            drill_df[c] = drill_df[c].fillna("—")
         st.markdown(f'<p style="color:{SLATE};font-size:13px;margin-bottom:8px">{len(drill_df)} mentions for <b>{drill}</b></p>', unsafe_allow_html=True)
         st.dataframe(drill_df, use_container_width=True, height=380, hide_index=True,
             column_config={
@@ -976,11 +978,16 @@ with tab_ig:
         if ig_df.empty:
             st.info("No posts in this period.")
         else:
+            # Coerce numeric columns
+            ig_df["likes"]    = pd.to_numeric(ig_df.get("likes",    0), errors="coerce").fillna(0).astype(int)
+            ig_df["comments"] = pd.to_numeric(ig_df.get("comments", 0), errors="coerce").fillna(0).astype(int)
+
             # KPI row
             has_src = "source_type" in ig_df.columns
             own_n    = int((ig_df["source_type"]=="own_post").sum()) if has_src else len(ig_df)
             tagged_n = int((ig_df["source_type"]=="tagged").sum())   if has_src else 0
             htag_n   = int((ig_df["source_type"]=="hashtag").sum())  if has_src else 0
+            total_likes = int(ig_df["likes"].sum())
             st.markdown(f"""
             <div class="kpi-grid" style="grid-template-columns:repeat(5,1fr)">
               <div class="kpi-card">
@@ -990,7 +997,7 @@ with tab_ig:
               </div>
               <div class="kpi-card green">
                 <div class="kpi-icon">❤️</div>
-                <div class="kpi-value" style="color:{GREEN}">{ig_df['likes'].sum():,}</div>
+                <div class="kpi-value" style="color:{GREEN}">{total_likes:,}</div>
                 <div class="kpi-label">Total likes</div>
               </div>
               <div class="kpi-card">
