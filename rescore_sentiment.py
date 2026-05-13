@@ -11,7 +11,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# override=True so .env beats any empty-string env vars set by the parent shell
+load_dotenv(override=True)
 
 DB_PATH = Path(__file__).parent / "press_narges.db"
 
