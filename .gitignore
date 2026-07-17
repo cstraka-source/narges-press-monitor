@@ -16,6 +16,10 @@ press_digest_*.md
 
 # Instagram session
 .instaloader_*
+.instagrapi_session.json
+
+# Claude Code local config
+.claude/
 
 # twscrape
 twscrape_accounts.db
